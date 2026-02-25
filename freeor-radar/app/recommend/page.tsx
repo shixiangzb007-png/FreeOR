@@ -1,0 +1,182 @@
+'use client';
+
+import { useState } from 'react';
+import { Sparkles, Send, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
+import { FreeModel, RecommendResult } from '@/types';
+
+const EXAMPLE_TASKS = [
+    '我需要一个支持长文档摘要（100K+ tokens）的免费模型',
+    '帮我找一个可以分析图片内容的免费视觉模型',
+    '我要做代码 review，需要一个强代码能力的免费模型',
+    '我需要一个支持中文的免费聊天模型',
+];
+
+export default function RecommendPage() {
+    const [task, setTask] = useState('');
+    const [result, setResult] = useState<RecommendResult | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [copied, setCopied] = useState<string | null>(null);
+
+    async function handleAnalyze() {
+        if (!task.trim()) return;
+        setIsAnalyzing(true);
+
+        try {
+            const res = await fetch('/api/recommend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setResult(data);
+            }
+        } catch {
+            // Fallback demo result
+        } finally {
+            setIsAnalyzing(false);
+        }
+    }
+
+    function copy(text: string, key: string) {
+        navigator.clipboard.writeText(text);
+        setCopied(key);
+        setTimeout(() => setCopied(null), 2000);
+    }
+
+    return (
+        <div className="max-w-4xl mx-auto space-y-6">
+            <div>
+                <h1 className="text-2xl font-bold text-white">⚡ 智能推荐</h1>
+                <p className="text-sm text-white/40 mt-1">描述你的任务，AI 为你推荐最佳免费模型</p>
+            </div>
+
+            {/* Input area */}
+            <div className="card-glow rounded-2xl p-6 space-y-4">
+                <textarea
+                    value={task}
+                    onChange={e => setTask(e.target.value)}
+                    placeholder="描述你的任务需求，例如：我需要处理长文档、分析图片、写代码..."
+                    rows={5}
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/25 text-sm focus:outline-none focus:border-green-500/40 resize-none"
+                />
+
+                {/* Example tasks */}
+                <div className="space-y-2">
+                    <p className="text-xs text-white/30 font-medium">快速选择：</p>
+                    <div className="flex flex-wrap gap-2">
+                        {EXAMPLE_TASKS.map(t => (
+                            <button
+                                key={t}
+                                onClick={() => setTask(t)}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/50 hover:text-white/80 hover:border-white/20 transition-all text-left"
+                            >
+                                {t}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <button
+                    onClick={handleAnalyze}
+                    disabled={!task.trim() || isAnalyzing}
+                    className="flex items-center gap-2 h-11 px-6 rounded-xl bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-bold text-sm transition-all"
+                >
+                    {isAnalyzing ? <Sparkles className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    {isAnalyzing ? '分析中...' : '分析任务'}
+                </button>
+            </div>
+
+            {/* Results */}
+            {result && (
+                <div className="space-y-4">
+                    {/* Best model */}
+                    <div className="card-glow rounded-2xl p-6 border-green-500/20">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="badge-free">最佳推荐</span>
+                                </div>
+                                <h3 className="text-lg font-bold text-white">{result.best_model.name}</h3>
+                                <p className="text-sm text-white/50 mt-1">{result.best_model.provider}</p>
+                                <p className="text-sm text-white/70 mt-3">{result.reason}</p>
+                            </div>
+                            <a
+                                href={`https://openrouter.ai/models/${result.best_model.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-green-500/15 border border-green-500/25 text-green-400 text-sm font-medium hover:bg-green-500/20 transition-all"
+                            >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                查看
+                            </a>
+                        </div>
+
+                        {/* Risk warnings */}
+                        {result.risk_warnings.length > 0 && (
+                            <div className="mt-4 p-3 rounded-xl bg-yellow-500/8 border border-yellow-500/15">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-yellow-400" />
+                                    <span className="text-xs text-yellow-400 font-semibold">注意事项</span>
+                                </div>
+                                <ul className="space-y-1">
+                                    {result.risk_warnings.map((w, i) => (
+                                        <li key={i} className="text-xs text-yellow-300/70">• {w}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Wrapper code */}
+                    <div className="card-glow rounded-2xl p-6">
+                        <h4 className="text-sm font-semibold text-white/80 mb-4">🔌 一键接入代码</h4>
+                        <div className="space-y-3">
+                            {Object.entries(result.wrapper_code).map(([lang, code]) => (
+                                <div key={lang}>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="text-xs text-white/40 font-medium uppercase">{lang}</span>
+                                        <button
+                                            onClick={() => copy(code, lang)}
+                                            className="flex items-center gap-1 text-xs text-green-400 hover:text-green-300 font-medium"
+                                        >
+                                            <Copy className="w-3 h-3" />
+                                            {copied === lang ? '已复制' : '复制'}
+                                        </button>
+                                    </div>
+                                    <pre className="text-xs text-white/60 bg-white/3 border border-white/8 rounded-lg p-3 overflow-x-auto font-mono">
+                                        {code}
+                                    </pre>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Alternatives */}
+                    <div className="card-glow rounded-2xl p-6">
+                        <h4 className="text-sm font-semibold text-white/80 mb-4">🔄 备用推荐 Top 3</h4>
+                        <div className="space-y-2">
+                            {result.alternatives.map((m, i) => (
+                                <div key={m.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/3 border border-white/7">
+                                    <span className="text-xs text-white/30 font-bold w-4">#{i + 1}</span>
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium text-white/80">{m.name}</div>
+                                        <div className="text-xs text-white/30">{m.provider} · {m.context ? `${Math.round(m.context / 1000)}K ctx` : ''}</div>
+                                    </div>
+                                    <a
+                                        href={`https://openrouter.ai/models/${m.id}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-white/30 hover:text-white/60 transition-colors"
+                                    >
+                                        <ExternalLink className="w-4 h-4" />
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

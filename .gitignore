@@ -1,0 +1,15 @@
+# 根目录忽略规则
+.env
+.env.local
+.env*.local
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
