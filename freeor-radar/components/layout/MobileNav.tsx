@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -8,26 +7,27 @@ import {
     Video,
     Sparkles,
     GitFork,
-    Code2,
     BookOpen,
     Settings,
 } from 'lucide-react';
+import { useLang } from '@/lib/i18n/lang-context';
 
-const navItems = [
-    { href: '/', label: '仪表盘', icon: LayoutDashboard },
-    { href: '/video', label: '视频', icon: Video },
-    { href: '/recommend', label: '推荐', icon: Sparkles },
-    { href: '/changelog', label: '日志', icon: GitFork },
-    { href: '/guide', label: '指南', icon: BookOpen },
-    { href: '/settings', label: '设置', icon: Settings },
+const NAV_KEYS = [
+    { href: '/', tKey: 'nav.dashboard', icon: LayoutDashboard },
+    { href: '/video', tKey: 'nav.video', icon: Video },
+    { href: '/recommend', tKey: 'nav.recommend', icon: Sparkles },
+    { href: '/changelog', tKey: 'nav.changelog', icon: GitFork },
+    { href: '/guide', tKey: 'nav.guide', icon: BookOpen },
+    { href: '/settings', tKey: 'nav.settings', icon: Settings },
 ];
 
 export function MobileNav() {
     const pathname = usePathname();
+    const { t } = useLang();
 
     return (
         <nav className="mobile-nav lg:hidden">
-            {navItems.map(({ href, label, icon: Icon }) => {
+            {NAV_KEYS.map(({ href, tKey, icon: Icon }) => {
                 const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
                 return (
                     <Link
@@ -39,7 +39,7 @@ export function MobileNav() {
                             }`}
                     >
                         <Icon className="w-5 h-5" />
-                        <span className="text-[10px] font-medium">{label}</span>
+                        <span className="text-[10px] font-medium">{t(tKey)}</span>
                         {isActive && (
                             <span className="absolute bottom-1 w-1 h-1 rounded-full bg-green-400" />
                         )}

@@ -62,7 +62,7 @@ export default function RootLayout({
               </header>
 
               {/* Page content */}
-              <main className="flex-1 overflow-y-auto px-4 py-6 lg:px-8 pb-20 lg:pb-8">
+              <main className="flex-1 overflow-y-auto px-4 pt-6 pb-24 lg:px-8 lg:pb-16">
                 {children}
               </main>
             </div>
