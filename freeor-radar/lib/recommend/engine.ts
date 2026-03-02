@@ -1,6 +1,114 @@
 import { FreeModel, RecommendResult } from '@/types';
 
-// ── 任务关键词 → 能力/偏好 映射 ────────────────────────────────
+// ── LLM 推荐（有 API Key 时优先调用）────────────────────────
+
+/**
+ * 使用 OpenRouter LLM 分析任务并推荐最佳免费模型。
+ *
+ * @param task     用户描述的任务
+ * @param models   当前所有免费模型列表
+ * @param apiKey   用户的 OpenRouter API Key
+ * @returns        RecommendResult，或 null（失败时 fallback 至规则引擎）
+ */
+export async function llmRecommend(
+    task: string,
+    models: FreeModel[],
+    apiKey: string
+): Promise<RecommendResult | null> {
+    // 取最新 50 个模型，构造压缩摘要（避免 token 过多）
+    const topModels = models.slice(0, 50);
+    const modelsSummary = topModels.map(m => ({
+        id: m.id,
+        name: m.name,
+        provider: m.provider,
+        context_k: m.context ? Math.round(m.context / 1000) : null,
+        caps: m.capabilities || [],
+    }));
+
+    const systemPrompt = `You are an AI model recommendation expert for OpenRouter free models.
+Given a user task and a list of available free models, recommend the BEST model.
+
+Respond ONLY with valid JSON in this exact structure (no markdown, no extra text):
+{
+  "best_model_id": "<exact model id from the list>",
+  "reason": "<1-2 sentence explanation in the same language as the user task>",
+  "risk_warnings": ["<warning 1>", "<warning 2>"],
+  "alternative_ids": ["<id2>", "<id3>", "<id4>"]
+}
+
+Rules:
+- best_model_id and alternative_ids MUST be exact IDs from the provided model list
+- reason should be specific to the task requirements
+- risk_warnings should mention rate limits, model-specific caveats (2-3 items)
+- alternative_ids: exactly 3 fallback models
+- Respond in the same language as the user's task (Chinese if task is in Chinese)`;
+
+    const userPrompt = `User task: ${task}\n\nAvailable free models:\n${JSON.stringify(modelsSummary, null, 2)}`;
+
+    try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://freeor.app',
+                'X-Title': 'FreeOR Radar',
+            },
+            body: JSON.stringify({
+                model: 'google/gemini-2.0-flash-lite:free',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                ],
+                temperature: 0.3,
+                max_tokens: 800,
+            }),
+            signal: AbortSignal.timeout(20_000), // 20s 超时
+        });
+
+        if (!response.ok) {
+            console.error('[LLM Recommend] API error:', response.status);
+            return null;
+        }
+
+        const data = await response.json();
+        const content: string = data?.choices?.[0]?.message?.content || '';
+
+        // 解析 JSON（兼容有时 LLM 会包在 ```json ``` 中）
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return null;
+        const parsed = JSON.parse(jsonMatch[0]) as {
+            best_model_id: string;
+            reason: string;
+            risk_warnings: string[];
+            alternative_ids: string[];
+        };
+
+        // 从模型列表中找到对应模型对象
+        const modelMap = new Map(models.map(m => [m.id, m]));
+        const bestModel = modelMap.get(parsed.best_model_id);
+        if (!bestModel) return null;
+
+        const alternatives = (parsed.alternative_ids || [])
+            .map(id => modelMap.get(id))
+            .filter((m): m is FreeModel => !!m)
+            .slice(0, 3);
+
+        return {
+            best_model: bestModel,
+            reason: parsed.reason || '',
+            risk_warnings: Array.isArray(parsed.risk_warnings) ? parsed.risk_warnings : [],
+            alternatives,
+            wrapper_code: buildWrapperCode(bestModel),
+        };
+
+    } catch (err) {
+        console.error('[LLM Recommend] Failed:', err instanceof Error ? err.message : err);
+        return null;
+    }
+}
+
+// ── 任务关键词 → 能力/偏好 映射 ─────────────────────────────────
 
 interface TaskSignals {
     needsVision: boolean;

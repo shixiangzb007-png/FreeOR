@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { Sparkles, Send, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Sparkles, Send, Copy, ExternalLink, AlertTriangle, Zap, Bot } from 'lucide-react';
 import { FreeModel, RecommendResult } from '@/types';
 import { useLang } from '@/lib/i18n/lang-context';
+
+const STORAGE_KEY = 'freeor-settings';
 
 const EXAMPLE_TASKS_ZH = [
     '我需要一个支持长文档摘要（100K+ tokens）的免费模型',
@@ -19,26 +21,47 @@ const EXAMPLE_TASKS_EN = [
     'I need a free chat model with good Chinese language support',
 ];
 
+type ResultWithMode = RecommendResult & { mode?: 'llm' | 'rule' };
+
 export default function RecommendPage() {
     const { t, lang } = useLang();
     const [task, setTask] = useState('');
-    const [result, setResult] = useState<RecommendResult | null>(null);
+    const [result, setResult] = useState<ResultWithMode | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [copied, setCopied] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [apiKey, setApiKey] = useState('');
+
+    // 从 localStorage 读取已保存的 OpenRouter Key
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                const settings = JSON.parse(raw);
+                if (settings.openrouter_key) setApiKey(settings.openrouter_key);
+            }
+        } catch {
+            // ignore
+        }
+    }, []);
 
     const exampleTasks = lang === 'zh' ? EXAMPLE_TASKS_ZH : EXAMPLE_TASKS_EN;
+    const hasKey = apiKey.length > 0;
 
     async function handleAnalyze() {
         if (!task.trim()) return;
         setIsAnalyzing(true);
         setError(null);
+        setResult(null);
 
         try {
             const res = await fetch('/api/recommend', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ task }),
+                body: JSON.stringify({
+                    task,
+                    ...(hasKey ? { apiKey } : {}),
+                }),
             });
             const data = await res.json();
             if (res.ok) {
@@ -46,7 +69,7 @@ export default function RecommendPage() {
             } else {
                 setError(data.error || 'Unknown error');
             }
-        } catch (e) {
+        } catch {
             setError(lang === 'zh' ? '网络错误，请稍后重试' : 'Network error, please try again');
         } finally {
             setIsAnalyzing(false);
@@ -64,6 +87,17 @@ export default function RecommendPage() {
             <div>
                 <h1 className="text-2xl font-bold text-white">{t('recommend.title')}</h1>
                 <p className="text-sm text-white/40 mt-1">{t('recommend.subtitle')}</p>
+            </div>
+
+            {/* Mode indicator */}
+            <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm w-fit ${hasKey
+                    ? 'bg-green-500/8 border-green-500/20 text-green-400'
+                    : 'bg-white/4 border-white/10 text-white/40'
+                }`}>
+                {hasKey
+                    ? <><Bot className="w-4 h-4" />🤖 {lang === 'zh' ? 'AI 分析模式（LLM 推荐）' : 'AI Mode (LLM Recommend)'}</>
+                    : <><Zap className="w-4 h-4" />⚡ {lang === 'zh' ? '规则引擎模式' : 'Rule Engine Mode'} · <a href="/settings" className="underline hover:text-white/60 transition-colors">{lang === 'zh' ? '设置 API Key 启用 AI 推荐 →' : 'Set API Key to enable AI →'}</a></>
+                }
             </div>
 
             {/* Input area */}
@@ -116,6 +150,19 @@ export default function RecommendPage() {
             {/* Results */}
             {result && (
                 <div className="space-y-4">
+                    {/* Mode badge on result */}
+                    {result.mode && (
+                        <div className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full w-fit ${result.mode === 'llm'
+                                ? 'bg-green-500/12 text-green-400 border border-green-500/20'
+                                : 'bg-white/6 text-white/40 border border-white/10'
+                            }`}>
+                            {result.mode === 'llm'
+                                ? (<><Bot className="w-3 h-3" /> {lang === 'zh' ? 'AI 推荐结果' : 'AI Recommendation'}</>)
+                                : (<><Zap className="w-3 h-3" /> {lang === 'zh' ? '规则引擎结果' : 'Rule Engine Result'}</>)
+                            }
+                        </div>
+                    )}
+
                     {/* Best model */}
                     <div className="card-glow rounded-2xl p-6 border-green-500/20">
                         <div className="flex items-start justify-between gap-4">
