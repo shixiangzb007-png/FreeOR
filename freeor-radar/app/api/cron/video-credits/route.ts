@@ -1,31 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { PLATFORM_CONFIGS } from '@/lib/video-credits/platform-config';
 
 /**
  * POST /api/cron/video-credits
  *
- * 每日 UTC 01:00 由 Vercel Cron 触发（见 vercel.json）。
- * 将所有平台的 used_today 重置为 0，daily_credits 同步为最新配置。
- *
- * 为何不实时抓取：各平台均无公开 API，Playwright 爬取无法在 Vercel 运行。
- * 管理员可通过 POST /api/admin/video-credits 手动 patch 真实已用量。
+ * Resets all platform video credits daily (UTC 01:00).
+ * S-2 Fix: CRON_SECRET is strictly required — returns 503 if unset.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
     const startTime = Date.now();
 
-    // ── 鉴权 ────────────────────────────────────────────────────
-    const authHeader = req.headers.get('authorization');
+    // ── S-2: Strict auth ─────────────────────────────────────────
     const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret) {
+        return NextResponse.json(
+            { success: false, error: 'CRON_SECRET is not configured. Set it in environment variables.' },
+            { status: 503 }
+        );
+    }
+    const authHeader = req.headers.get('authorization');
+    if (authHeader !== `Bearer ${cronSecret}`) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     try {
-        const supabase = createServiceClient();
+        const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            { auth: { persistSession: false } }
+        );
         const now = new Date().toISOString();
 
-        // 构造 upsert payload：每日重置 used_today = 0
         const rows = PLATFORM_CONFIGS.map(p => ({
             tool: p.tool,
             daily_credits: p.daily_credits,
@@ -39,10 +45,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             .upsert(rows, { onConflict: 'tool' });
 
         if (error) {
-            return NextResponse.json(
-                { success: false, error: error.message },
-                { status: 500 }
-            );
+            return NextResponse.json({ success: false, error: error.message }, { status: 500 });
         }
 
         const duration_ms = Date.now() - startTime;

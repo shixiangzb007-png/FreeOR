@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient as createSupabaseServiceClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 export async function createClient() {
@@ -26,10 +27,10 @@ export async function createClient() {
     );
 }
 
-// Service-role client for server-side mutations (cron, webhooks)
+// Service-role client for server-side mutations (cron, webhooks).
+// Uses ESM import (not require) — compatible with Edge Runtime.
 export function createServiceClient() {
-    const { createClient } = require('@supabase/supabase-js');
-    return createClient(
+    return createSupabaseServiceClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         { auth: { persistSession: false } }

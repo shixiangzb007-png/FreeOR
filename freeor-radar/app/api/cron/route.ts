@@ -6,6 +6,7 @@ import { notifyDiscord } from '@/lib/notifications/discord';
 import { notifyX } from '@/lib/notifications/x-twitter';
 import { createServiceClient } from '@/lib/supabase/server';
 import { syncLog, flushLogs } from '@/lib/openrouter/sync-logger';
+import { validateCronEnv, isValidDiscordWebhook } from '@/lib/env';
 import { CronResult } from '@/types';
 
 /**
@@ -13,16 +14,23 @@ import { CronResult } from '@/types';
  * Triggered by Vercel Cron every hour (see vercel.json).
  * Supports manual trigger via Authorization header.
  *
- * Returns structured result with logs for debugging.
+ * S-2 Fix: CRON_SECRET is now REQUIRED — returns 401 if not set at all.
+ * S-5 Fix: Discord webhook URL validated before use.
  */
 export async function POST(req: NextRequest): Promise<NextResponse<CronResult>> {
     const startTime = Date.now();
 
-    // ── Auth check ──────────────────────────────────────────────
-    const authHeader = req.headers.get('authorization');
+    // ── S-2: Strict auth — CRON_SECRET must be set AND match ───
     const cronSecret = process.env.CRON_SECRET;
-
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret) {
+        // Secret not configured at all — refuse to run (prevents misconfigured deploys)
+        return NextResponse.json(
+            { success: false, updated: 0, added: 0, removed: 0, notified: false, error: 'CRON_SECRET is not configured. Set it in environment variables.' },
+            { status: 503 }
+        );
+    }
+    const authHeader = req.headers.get('authorization');
+    if (authHeader !== `Bearer ${cronSecret}`) {
         return NextResponse.json(
             { success: false, updated: 0, added: 0, removed: 0, notified: false, error: 'Unauthorized' },
             { status: 401 }
@@ -33,12 +41,10 @@ export async function POST(req: NextRequest): Promise<NextResponse<CronResult>> 
 
     try {
         // ── Step 1: Fetch free models from OpenRouter ─────────────
-        // Skill: timeout + retry logic is inside fetchFreeModels()
         const newModels = await fetchFreeModels();
         syncLog('info', `Fetched ${newModels.length} free models (${newModels.filter(m => m.is_video_supported).length} video-supported)`);
 
         // ── Step 2: Diff & sync to Supabase ──────────────────────
-        // Skill: independent try/catch per DB op inside diffAndSyncModels()
         const supabase = createServiceClient();
         const diff = await diffAndSyncModels(supabase, newModels);
 
@@ -56,13 +62,18 @@ export async function POST(req: NextRequest): Promise<NextResponse<CronResult>> 
                         .catch(e => syncLog('error', `Telegram notify failed: ${e.message}`))
                 );
             }
-            if (process.env.DISCORD_WEBHOOK_URL) {
+
+            // S-5 Fix: validate Discord webhook URL format before sending
+            const discordUrl = process.env.DISCORD_WEBHOOK_URL;
+            if (discordUrl && isValidDiscordWebhook(discordUrl)) {
                 tasks.push(
-                    notifyDiscord(diff, process.env.DISCORD_WEBHOOK_URL)
+                    notifyDiscord(diff, discordUrl)
                         .catch(e => syncLog('error', `Discord notify failed: ${e.message}`))
                 );
+            } else if (discordUrl) {
+                syncLog('warn', 'DISCORD_WEBHOOK_URL format is invalid — skipping Discord notification');
             }
-            // P2: X (Twitter) 推送
+
             if (process.env.X_ACCESS_TOKEN && process.env.X_API_KEY) {
                 tasks.push(
                     notifyX(diff)

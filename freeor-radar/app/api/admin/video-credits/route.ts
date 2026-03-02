@@ -1,28 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { PLATFORM_CONFIGS, getPlatformConfig } from '@/lib/video-credits/platform-config';
 
 /**
  * POST /api/admin/video-credits
  *
- * 管理员手动更新视频平台额度数据（各平台无公开 API，此为唯一实时更新方式）。
+ * Admin endpoint to manually patch video credit data.
+ * S-2 Fix: CRON_SECRET strictly required — returns 503 if unset, 401 if wrong.
  *
  * Authorization: Bearer <CRON_SECRET>
  *
- * Body（单条更新）：
- *   { tool: string, used_today?: number, daily_credits?: number }
- *
- * Body（批量更新）：
- *   { updates: Array<{ tool, used_today?, daily_credits? }> }
- *
- * Body（全部重置）：
- *   { action: "reset_all" }
+ * Body (single):   { tool: string, used_today?: number, daily_credits?: number }
+ * Body (batch):    { updates: Array<{ tool, used_today?, daily_credits? }> }
+ * Body (reset all): { action: "reset_all" }
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-    // ── 鉴权 ────────────────────────────────────────────────────
-    const authHeader = req.headers.get('authorization');
+    // ── S-2: Strict auth ─────────────────────────────────────────
     const cronSecret = process.env.CRON_SECRET;
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret) {
+        return NextResponse.json(
+            { success: false, error: 'CRON_SECRET is not configured. Set it in environment variables.' },
+            { status: 503 }
+        );
+    }
+    const authHeader = req.headers.get('authorization');
+    if (authHeader !== `Bearer ${cronSecret}`) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -33,7 +35,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ success: false, error: 'Invalid JSON' }, { status: 400 });
     }
 
-    const supabase = createServiceClient();
+    const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { persistSession: false } }
+    );
     const now = new Date().toISOString();
 
     // ── 全部重置 ────────────────────────────────────────────────
@@ -94,15 +100,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
 }
 
-/** GET — 查询当前所有平台额度 */
+/** GET — query current credits (auth required) */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-    const authHeader = req.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret) {
+        return NextResponse.json({ success: false, error: 'CRON_SECRET is not configured.' }, { status: 503 });
+    }
+    const authHeader = req.headers.get('authorization');
+    if (authHeader !== `Bearer ${cronSecret}`) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = createServiceClient();
+    const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { persistSession: false } }
+    );
     const { data, error } = await supabase
         .from('video_credits')
         .select('*')

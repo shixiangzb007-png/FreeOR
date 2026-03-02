@@ -12,22 +12,25 @@ import {
 
 /**
  * POST /api/recommend
- * Body: { task: string, apiKey?: string, limit?: number }
+ * Body: { task: string, limit?: number }
+ * Header (optional): X-OpenRouter-Key: <user's OpenRouter API key>
  *
- * 当传入 apiKey 时，优先使用 LLM（gemini-2.0-flash-lite:free）分析推荐。
- * LLM 失败或无 apiKey 时，fallback 至规则引擎。
+ * S-3 Fix: API key now read from header (not body) to prevent accidental logging.
+ * When key present: tries LLM (gemini-2.0-flash-lite:free) first.
+ * On LLM failure or no key: falls back to rule engine.
  *
  * Returns: RecommendResult & { mode: 'llm' | 'rule' }
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
     let task: string;
-    let apiKey = '';
     let limit = 3;
+
+    // S-3 Fix: read API key from header, not body
+    const apiKey = req.headers.get('x-openrouter-key')?.trim() ?? '';
 
     try {
         const body = await req.json();
         task = (body.task || '').trim();
-        apiKey = (body.apiKey || '').trim();
         if (body.limit) limit = Math.min(Number(body.limit), 10);
     } catch {
         return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
@@ -37,7 +40,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'task is required' }, { status: 400 });
     }
 
-    // ── 1. 从 Supabase 加载所有在线免费模型 ─────────────────────
+    // ── 1. Load free models from Supabase ────────────────────────
     const supabase = await createClient();
     const { data, error } = await supabase
         .from('free_models')
@@ -59,17 +62,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         );
     }
 
-    // ── 2. 优先尝试 LLM 推荐（需要 apiKey）──────────────────────
+    // ── 2. Try LLM recommend (requires API key) ──────────────────
     if (apiKey) {
         const llmResult = await llmRecommend(task, models, apiKey);
         if (llmResult) {
             return NextResponse.json({ ...llmResult, mode: 'llm' });
         }
-        // LLM 失败，记录并继续 fallback
         console.warn('[Recommend] LLM failed, falling back to rule engine');
     }
 
-    // ── 3. 规则引擎 fallback ──────────────────────────────────────
+    // ── 3. Rule engine fallback ───────────────────────────────────
     const signals = parseTaskSignals(task);
 
     const scored = models
@@ -101,16 +103,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(result);
 }
 
-// GET — 说明文档
 export async function GET(): Promise<NextResponse> {
     return NextResponse.json({
         endpoint: 'POST /api/recommend',
-        description: '基于规则引擎或 LLM（当提供 apiKey 时）的免费模型推荐',
-        body: {
-            task: 'string (required)',
-            apiKey: 'string (optional, OpenRouter API Key — enables LLM mode)',
-            limit: 'number (optional, default 3)',
-        },
-        example: { task: '我需要一个支持图片分析的免费模型', apiKey: 'sk-or-v1-...' },
+        description: '基于规则引擎或 LLM 的免费模型推荐',
+        body: { task: 'string (required)', limit: 'number (optional, default 3)' },
+        headers: { 'X-OpenRouter-Key': 'string (optional, enables LLM mode)' },
+        example: { task: '我需要一个支持图片分析的免费模型' },
     });
 }

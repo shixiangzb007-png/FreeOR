@@ -67,7 +67,7 @@ async function postTweet(
     const url = 'https://api.twitter.com/2/tweets';
     const method = 'POST';
     const timestamp = Math.floor(Date.now() / 1000).toString();
-    const nonce = Math.random().toString(36).slice(2, 17);
+    const nonce = crypto.randomUUID().replace(/-/g, '');
 
     // OAuth 1.0a 参数
     const oauthParams: Record<string, string> = {

@@ -55,13 +55,15 @@ export default function RecommendPage() {
         setResult(null);
 
         try {
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            // S-3 Fix: API key travels in a header, not the request body,
+            // to avoid it appearing in server logs or error dumps.
+            if (hasKey) headers['X-OpenRouter-Key'] = apiKey;
+
             const res = await fetch('/api/recommend', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    task,
-                    ...(hasKey ? { apiKey } : {}),
-                }),
+                headers,
+                body: JSON.stringify({ task }),
             });
             const data = await res.json();
             if (res.ok) {
@@ -91,8 +93,8 @@ export default function RecommendPage() {
 
             {/* Mode indicator */}
             <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm w-fit ${hasKey
-                    ? 'bg-green-500/8 border-green-500/20 text-green-400'
-                    : 'bg-white/4 border-white/10 text-white/40'
+                ? 'bg-green-500/8 border-green-500/20 text-green-400'
+                : 'bg-white/4 border-white/10 text-white/40'
                 }`}>
                 {hasKey
                     ? <><Bot className="w-4 h-4" />🤖 {lang === 'zh' ? 'AI 分析模式（LLM 推荐）' : 'AI Mode (LLM Recommend)'}</>
@@ -153,8 +155,8 @@ export default function RecommendPage() {
                     {/* Mode badge on result */}
                     {result.mode && (
                         <div className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full w-fit ${result.mode === 'llm'
-                                ? 'bg-green-500/12 text-green-400 border border-green-500/20'
-                                : 'bg-white/6 text-white/40 border border-white/10'
+                            ? 'bg-green-500/12 text-green-400 border border-green-500/20'
+                            : 'bg-white/6 text-white/40 border border-white/10'
                             }`}>
                             {result.mode === 'llm'
                                 ? (<><Bot className="w-3 h-3" /> {lang === 'zh' ? 'AI 推荐结果' : 'AI Recommendation'}</>)
