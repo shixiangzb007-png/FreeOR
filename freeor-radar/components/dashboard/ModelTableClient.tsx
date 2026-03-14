@@ -17,26 +17,29 @@ interface ModelTableClientProps {
     initialSearch?: string;
 }
 
-/** 从 pricing / per_request_limits 派生限流级别 */
+const RATE_LEVEL_CONFIG: Record<string, { label: string; color: string; hint: string }> = {
+    high:     { label: '较高',   color: 'text-green-400',  hint: '限流较宽松（≥200K prompt tokens/次）' },
+    standard: { label: '标准',   color: 'text-yellow-400', hint: '标准速率限制（50K–200K tokens/次）' },
+    low:      { label: '较低',   color: 'text-red-400',    hint: '限流较严（<50K tokens/次）' },
+    unknown:  { label: '未知',   color: 'text-white/30',   hint: '暂无限流数据（来自 OpenRouter API）' },
+};
+
+/** 从 rate_limit_level 字段读取限流级别，补充原始数字作 Tooltip */
 function getRateLimit(model: FreeModel): { label: string; color: string; hint: string } {
-    const id = model.id.toLowerCase();
-    // 已知高限流模型（启发式，基于 OpenRouter 的实际表现）
-    if (id.includes('gemini') || id.includes('gemma')) {
-        return { label: '较高', color: 'text-green-400', hint: 'Google 系模型，限流较宽松' };
+    const level = model.rate_limit_level ?? 'unknown';
+    const cfg = RATE_LEVEL_CONFIG[level] ?? RATE_LEVEL_CONFIG.unknown;
+    // 若有原始 per_request_limits 数据，追加数字到 hint
+    if (model.per_request_limits) {
+        const pt = model.per_request_limits['prompt_tokens'] ?? model.per_request_limits['prompt'];
+        const ct = model.per_request_limits['completion_tokens'] ?? model.per_request_limits['completion'];
+        if (pt || ct) {
+            const parts: string[] = [];
+            if (pt) parts.push(`prompt: ${pt}`);
+            if (ct) parts.push(`completion: ${ct}`);
+            return { ...cfg, hint: `${cfg.hint} · ${parts.join(', ')}` };
+        }
     }
-    if (id.includes('llama-3.1-8b') || id.includes('llama-3.2')) {
-        return { label: '标准', color: 'text-yellow-400', hint: 'Meta Llama 小模型，标准限流' };
-    }
-    if (id.includes('deepseek') || id.includes('r1')) {
-        return { label: '较低', color: 'text-orange-400', hint: 'DeepSeek，高峰期限流较严' };
-    }
-    if (id.includes('70b') || id.includes('72b') || id.includes('405b')) {
-        return { label: '较低', color: 'text-red-400', hint: '大参数模型，免费层限流较严' };
-    }
-    if (id.includes('openrouter') || id.includes('free-models')) {
-        return { label: '综合', color: 'text-blue-400', hint: 'OpenRouter 聚合路由' };
-    }
-    return { label: '标准', color: 'text-white/40', hint: '标准速率限制' };
+    return cfg;
 }
 
 export function ModelTableClient({ models, initialSearch = '' }: ModelTableClientProps) {

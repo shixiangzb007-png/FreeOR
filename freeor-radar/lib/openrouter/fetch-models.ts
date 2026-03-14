@@ -22,6 +22,21 @@ const VIDEO_KEYWORDS = [
     'image',
 ];
 
+/**
+ * Derive a human-readable rate limit level from OpenRouter per_request_limits.
+ * Thresholds based on observed OpenRouter free tier policies.
+ */
+function deriveRateLimitLevel(limits: Record<string, unknown> | null | undefined): string {
+    if (!limits) return 'unknown';
+    // OpenRouter format: { "prompt_tokens": "20000", "completion_tokens": "5000" }
+    const raw = limits['prompt_tokens'] ?? limits['prompt'] ?? limits['tokens'];
+    const promptLimit = typeof raw === 'string' ? parseInt(raw, 10) : typeof raw === 'number' ? raw : NaN;
+    if (isNaN(promptLimit) || promptLimit <= 0) return 'unknown';
+    if (promptLimit >= 200_000) return 'high';
+    if (promptLimit >= 50_000)  return 'standard';
+    return 'low';
+}
+
 // ─── Public API ───────────────────────────────────────────────
 
 /**
@@ -163,6 +178,8 @@ function normalizeModel(model: OpenRouterModel): FreeModel {
         last_updated: new Date().toISOString(),
         is_free: true,
         is_video_supported: isVideoSupported,
+        per_request_limits: model.per_request_limits ?? null,
+        rate_limit_level: deriveRateLimitLevel(model.per_request_limits),
     };
 }
 

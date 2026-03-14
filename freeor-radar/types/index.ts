@@ -35,6 +35,10 @@ export interface FreeModel {
    * True if description or modality contains video/multimodal keywords.
    */
   is_video_supported: boolean;
+  /** Raw per_request_limits JSON from OpenRouter API */
+  per_request_limits: Record<string, unknown> | null;
+  /** Derived level: 'high' | 'standard' | 'low' | 'unknown' */
+  rate_limit_level: string;
 }
 
 // ── Change Tracking ──────────────────────────────────────────

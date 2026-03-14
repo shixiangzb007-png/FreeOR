@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
+import { useLang } from '@/lib/i18n/lang-context';
 
 const CODE_EXAMPLES = {
     python: `from openai import OpenAI
@@ -71,6 +72,7 @@ const TABS = ['python', 'javascript', 'curl', 'aider'] as const;
 type Tab = typeof TABS[number];
 
 export default function IntegrationsPage() {
+    const { t } = useLang();
     const [activeTab, setActiveTab] = useState<Tab>('python');
     const [copied, setCopied] = useState(false);
 
@@ -83,13 +85,13 @@ export default function IntegrationsPage() {
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             <div>
-                <h1 className="text-2xl font-bold text-white">🔌 集成中心</h1>
-                <p className="text-sm text-white/40 mt-1">多种语言快速接入 OpenRouter 免费模型</p>
+                <h1 className="text-2xl font-bold text-white">{t('integrations.title')}</h1>
+                <p className="text-sm text-white/40 mt-1">{t('integrations.subtitle')}</p>
             </div>
 
             {/* Quick start */}
             <div className="card-glow rounded-2xl p-6">
-                <h2 className="text-sm font-semibold text-white/80 mb-4">快速开始</h2>
+                <h2 className="text-sm font-semibold text-white/80 mb-4">{t('integrations.quickstart')}</h2>
 
                 {/* Tab bar */}
                 <div className="flex gap-1 p-1 bg-white/5 rounded-xl mb-5 w-fit">
@@ -120,7 +122,7 @@ export default function IntegrationsPage() {
                             className="flex items-center gap-1.5 text-xs text-white/30 hover:text-green-400 transition-colors"
                         >
                             {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                            {copied ? '已复制' : '复制'}
+                            {copied ? t('integrations.copied') : t('integrations.copy')}
                         </button>
                     </div>
                     <pre className="bg-[#111] border border-white/8 rounded-b-xl p-5 overflow-x-auto text-sm font-mono leading-relaxed">
@@ -131,8 +133,10 @@ export default function IntegrationsPage() {
 
             {/* Model ID tips */}
             <div className="card-glow rounded-2xl p-6">
-                <h2 className="text-sm font-semibold text-white/80 mb-3">💡 获取免费模型 ID</h2>
-                <p className="text-sm text-white/50 mb-4">所有免费模型 ID 均以 <code className="bg-white/10 px-1.5 py-0.5 rounded text-green-400">:free</code> 结尾</p>
+                <h2 className="text-sm font-semibold text-white/80 mb-3">{t('integrations.models.title')}</h2>
+                <p className="text-sm text-white/50 mb-4">
+                    {t('integrations.models.desc')} <code className="bg-white/10 px-1.5 py-0.5 rounded text-green-400">:free</code>
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {[
                         { name: 'Llama 3.1 8B', id: 'meta-llama/llama-3.1-8b-instruct:free' },
@@ -154,7 +158,7 @@ export default function IntegrationsPage() {
                         </div>
                     ))}
                 </div>
-                <p className="text-xs text-white/25 mt-3">前往仪表盘查看 {'->'} 完整免费模型列表（含 :free 标签）</p>
+                <p className="text-xs text-white/25 mt-3">{t('integrations.models.hint')}</p>
             </div>
         </div>
     );

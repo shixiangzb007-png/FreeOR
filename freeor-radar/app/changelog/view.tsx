@@ -3,20 +3,27 @@
 import { ChangeLog } from '@/types';
 import { useLang } from '@/lib/i18n/lang-context';
 
-const CHANGE_TYPE_CONFIG: Record<string, { label_zh: string; label_en: string; color: string; dot: string }> = {
-    new: { label_zh: '新增', label_en: 'New', color: 'text-green-400 bg-green-400/10 border-green-400/20', dot: 'bg-green-400' },
-    removed: { label_zh: '下线', label_en: 'Removed', color: 'text-red-400 bg-red-400/10 border-red-400/20', dot: 'bg-red-400' },
-    limit_change: { label_zh: '变更', label_en: 'Changed', color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20', dot: 'bg-yellow-400' },
-    restored: { label_zh: '恢复', label_en: 'Restored', color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', dot: 'bg-blue-400' },
-};
+// Removed the old CHANGE_TYPE_CONFIG constant
 
-interface Props {
+interface Props { // Keeping the original Props interface as the component still uses 'grouped'
     logs: ChangeLog[];
     grouped: Record<string, ChangeLog[]>;
 }
 
+// 动态获取类型配置的 Hook
+function useChangeLogTypes() {
+    const { t } = useLang();
+    return {
+        new: { label: t('changelog.type.new'), color: 'text-green-400 bg-green-400/10 border-green-400/20', dot: 'bg-green-400' },
+        removed: { label: t('changelog.type.removed'), color: 'text-red-400 bg-red-400/10 border-red-400/20', dot: 'bg-red-400' },
+        limit_change: { label: t('changelog.type.limit_change'), color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20', dot: 'bg-yellow-400' },
+        restored: { label: t('changelog.type.restored'), color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', dot: 'bg-blue-400' },
+    };
+}
+
 export default function ChangelogView({ logs, grouped }: Props) {
     const { t, lang } = useLang();
+    const CHANGE_TYPE_CONFIG = useChangeLogTypes(); // Use the new hook to get the config
 
     return (
         <div className="max-w-3xl mx-auto space-y-6">
@@ -48,7 +55,6 @@ export default function ChangelogView({ logs, grouped }: Props) {
                                 {dayLogs.map(log => {
                                     const cfg = CHANGE_TYPE_CONFIG[log.change_type] || CHANGE_TYPE_CONFIG.limit_change;
                                     const model = log.model;
-                                    const label = lang === 'zh' ? cfg.label_zh : cfg.label_en;
 
                                     return (
                                         <div key={log.id} className="relative">
@@ -59,7 +65,7 @@ export default function ChangelogView({ logs, grouped }: Props) {
                                                     <div className="flex-1">
                                                         <div className="flex items-center gap-2 mb-1.5">
                                                             <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${cfg.color}`}>
-                                                                {label}
+                                                                {cfg.label}
                                                             </span>
                                                             {model && (
                                                                 <span className="text-sm font-semibold text-white/90">{model.name}</span>

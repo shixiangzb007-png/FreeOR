@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, Send, Copy, ExternalLink, AlertTriangle, Zap, Bot } from 'lucide-react';
+import { Sparkles, Send, Copy, ExternalLink, AlertTriangle, Zap, Bot, RefreshCw } from 'lucide-react';
 import { FreeModel, RecommendResult } from '@/types';
 import { useLang } from '@/lib/i18n/lang-context';
 
@@ -50,29 +50,34 @@ export default function RecommendPage() {
 
     async function handleAnalyze() {
         if (!task.trim()) return;
+
         setIsAnalyzing(true);
-        setError(null);
+        setError('');
         setResult(null);
 
         try {
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            // S-3 Fix: API key travels in a header, not the request body,
-            // to avoid it appearing in server logs or error dumps.
-            if (hasKey) headers['X-OpenRouter-Key'] = apiKey;
-
+            const apiKey = localStorage.getItem('openrouter_key') || '';
             const res = await fetch('/api/recommend', {
                 method: 'POST',
-                headers,
-                body: JSON.stringify({ task }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+                },
+                body: JSON.stringify({ task, lang })
             });
+
             const data = await res.json();
-            if (res.ok) {
-                setResult(data);
-            } else {
-                setError(data.error || 'Unknown error');
+
+            if (!res.ok) {
+                if (data.error && data.error.includes('sync-now.mjs')) {
+                    throw new Error(t('recommend.error.sync'));
+                }
+                throw new Error(data.error || t('recommend.error.network'));
             }
-        } catch {
-            setError(lang === 'zh' ? '网络错误，请稍后重试' : 'Network error, please try again');
+
+            setResult(data);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : t('recommend.error.network'));
         } finally {
             setIsAnalyzing(false);
         }
@@ -87,83 +92,85 @@ export default function RecommendPage() {
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             <div>
-                <h1 className="text-2xl font-bold text-white">{t('recommend.title')}</h1>
+                <h1 className="text-2xl font-bold text-white">{t('nav.recommend')}</h1>
                 <p className="text-sm text-white/40 mt-1">{t('recommend.subtitle')}</p>
             </div>
 
-            {/* Mode indicator */}
-            <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm w-fit ${hasKey
-                ? 'bg-green-500/8 border-green-500/20 text-green-400'
-                : 'bg-white/4 border-white/10 text-white/40'
-                }`}>
-                {hasKey
-                    ? <><Bot className="w-4 h-4" />🤖 {lang === 'zh' ? 'AI 分析模式（LLM 推荐）' : 'AI Mode (LLM Recommend)'}</>
-                    : <><Zap className="w-4 h-4" />⚡ {lang === 'zh' ? '规则引擎模式' : 'Rule Engine Mode'} · <a href="/settings" className="underline hover:text-white/60 transition-colors">{lang === 'zh' ? '设置 API Key 启用 AI 推荐 →' : 'Set API Key to enable AI →'}</a></>
-                }
-            </div>
-
-            {/* Input area */}
-            <div className="card-glow rounded-2xl p-6 space-y-4">
-                <textarea
-                    value={task}
-                    onChange={e => setTask(e.target.value)}
-                    placeholder={t('recommend.placeholder')}
-                    rows={5}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/25 text-sm focus:outline-none focus:border-green-500/40 resize-none"
-                />
-
-                {/* Example tasks */}
-                <div className="space-y-2">
-                    <p className="text-xs text-white/30 font-medium">{t('recommend.quick')}</p>
-                    <div className="flex flex-wrap gap-2">
-                        {exampleTasks.map(example => (
+            {/* 输入区域 */}
+            <div className="card-glow rounded-3xl p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <div className="flex gap-2">
+                        {exampleTasks.map((example) => (
                             <button
                                 key={example}
                                 onClick={() => setTask(example)}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/50 hover:text-white/80 hover:border-white/20 transition-all text-left"
+                                className="text-xs px-3 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-white/60 transition-colors"
                             >
-                                {example}
+                                {exampleTasks.indexOf(example) + 1}
                             </button>
                         ))}
                     </div>
+                    <div className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm w-fit ${hasKey
+                        ? 'bg-green-500/8 border-green-500/20 text-green-400'
+                        : 'bg-white/4 border-white/10 text-white/40'
+                        }`}>
+                        {hasKey
+                            ? <><Bot className="w-4 h-4" />🤖 {t('recommend.mode.ai')}</>
+                            : <><Zap className="w-4 h-4" />⚡ {t('recommend.mode.rule')} · <a href="/settings" className="underline hover:text-white/60 transition-colors">{t('recommend.mode.link')}</a></>
+                        }
+                    </div>
+                </div>
+
+                <div className="relative">
+                    <textarea
+                        value={task}
+                        onChange={e => setTask(e.target.value)}
+                        placeholder={t('recommend.placeholder')}
+                        className="w-full h-32 bg-[#111] border border-white/10 rounded-2xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-green-500/50 focus:ring-1 focus:ring-green-500/50 resize-none transition-all"
+                        onKeyDown={e => {
+                            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                handleAnalyze();
+                            }
+                        }}
+                    />
+                    <button
+                        onClick={handleAnalyze}
+                        disabled={isAnalyzing || !task.trim()}
+                        className="absolute bottom-4 right-4 px-6 py-2 rounded-xl bg-white text-black font-semibold hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                    >
+                        {isAnalyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                        {isAnalyzing ? t('common.loading') : t('nav.recommend')}
+                    </button>
                 </div>
 
                 {error && (
-                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
-                        <p className="text-xs text-red-400">{error}</p>
-                        {error.includes('同步') || error.includes('sync') ? (
-                            <p className="text-xs text-white/30 mt-1">
-                                {lang === 'zh' ? '提示：先运行 node scripts/sync-now.mjs 填充数据' : 'Tip: Run node scripts/sync-now.mjs first to populate data'}
-                            </p>
-                        ) : null}
+                    <div className="mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-2">
+                        <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+                        <div>
+                            {error}
+                            {error.includes('sync') || error.includes('同步') ? (
+                                <div className="mt-2 text-xs opacity-70 font-mono">
+                                    {t('recommend.error.tip')}
+                                </div>
+                            ) : null}
+                        </div>
                     </div>
                 )}
-
-                <button
-                    onClick={handleAnalyze}
-                    disabled={!task.trim() || isAnalyzing}
-                    className="flex items-center gap-2 h-11 px-6 rounded-xl bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-bold text-sm transition-all"
-                >
-                    {isAnalyzing ? <Sparkles className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    {isAnalyzing ? t('recommend.analyzing') : t('recommend.analyze')}
-                </button>
             </div>
 
-            {/* Results */}
+            {/* 结果区域 */}
             {result && (
-                <div className="space-y-4">
-                    {/* Mode badge on result */}
-                    {result.mode && (
-                        <div className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full w-fit ${result.mode === 'llm'
-                            ? 'bg-green-500/12 text-green-400 border border-green-500/20'
-                            : 'bg-white/6 text-white/40 border border-white/10'
-                            }`}>
+                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="flex items-center gap-2 py-2">
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                        <span className="text-xs font-mono text-white/30 uppercase tracking-wider flex items-center gap-1.5">
                             {result.mode === 'llm'
-                                ? (<><Bot className="w-3 h-3" /> {lang === 'zh' ? 'AI 推荐结果' : 'AI Recommendation'}</>)
-                                : (<><Zap className="w-3 h-3" /> {lang === 'zh' ? '规则引擎结果' : 'Rule Engine Result'}</>)
+                                ? (<><Bot className="w-3 h-3" /> {t('recommend.result.ai')}</>)
+                                : (<><Zap className="w-3 h-3" /> {t('recommend.result.rule')}</>)
                             }
-                        </div>
-                    )}
+                        </span>
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                    </div>
 
                     {/* Best model */}
                     <div className="card-glow rounded-2xl p-6 border-green-500/20">
@@ -207,20 +214,20 @@ export default function RecommendPage() {
                     <div className="card-glow rounded-2xl p-6">
                         <h4 className="text-sm font-semibold text-white/80 mb-4">{t('recommend.code')}</h4>
                         <div className="space-y-3">
-                            {Object.entries(result.wrapper_code).map(([lang, code]) => (
-                                <div key={lang}>
+                            {Object.entries(result.wrapper_code).map(([language, code]) => (
+                                <div key={language}>
                                     <div className="flex items-center justify-between mb-1.5">
-                                        <span className="text-xs text-white/40 font-medium uppercase">{lang}</span>
+                                        <span className="text-xs text-white/40 font-medium uppercase">{language}</span>
                                         <button
-                                            onClick={() => copy(code, lang)}
+                                            onClick={() => copy(code as string, language)}
                                             className="flex items-center gap-1 text-xs text-green-400 hover:text-green-300 font-medium"
                                         >
                                             <Copy className="w-3 h-3" />
-                                            {copied === lang ? t('video.copied') : t('video.copy')}
+                                            {copied === language ? t('video.copied') : t('video.copy')}
                                         </button>
                                     </div>
                                     <pre className="text-xs text-white/60 bg-white/3 border border-white/8 rounded-lg p-3 overflow-x-auto font-mono">
-                                        {code}
+                                        {code as string}
                                     </pre>
                                 </div>
                             ))}
