@@ -95,6 +95,24 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
         'video.credits.realtime': '实时',
         'video.credits.sync': '每日 UTC 00:00 重置 · 数据每小时同步',
 
+        // ── 视频生成管线 (Video Pipeline) ──
+        'video.generate.btn': '🎬 开始生成视频',
+        'video.generate.btn.nokey': '需要 OpenRouter Key',
+        'video.generate.btn.loading': '视频生成中...',
+        'video.model.label': 'AI 视频模型',
+        'video.tasks.title': '生成历史',
+        'video.tasks.empty': '还没有生成记录',
+        'video.tasks.pending': '等待中...',
+        'video.tasks.processing': '视频生成中...',
+        'video.tasks.succeed': '生成成功',
+        'video.tasks.failed': '生成失败',
+        'video.tasks.download': '下载视频',
+        'video.tasks.retry': '重试',
+        'video.tasks.remove': '删除',
+        'video.tasks.play': '播放',
+        'video.error.nokey': '请先在设置页填写 OpenRouter API Key 才能使用视频生成功能。',
+        'video.error.noprompt': '请先生成 Prompt 再提交视频。',
+
         // ── 智能推荐 ──
         'recommend.title': '⚡ 智能推荐',
         'recommend.subtitle': '描述你的任务，AI 为你推荐最佳免费模型',
@@ -283,6 +301,24 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
         'video.history': 'History',
         'video.credits.realtime': 'Live',
         'video.credits.sync': 'Resets daily at UTC 00:00 · Synced hourly',
+
+        // ── Video Pipeline ──
+        'video.generate.btn': '🎬 Generate Video',
+        'video.generate.btn.nokey': 'Requires OpenRouter Key',
+        'video.generate.btn.loading': 'Generating video...',
+        'video.model.label': 'AI Video Model',
+        'video.tasks.title': 'Generation History',
+        'video.tasks.empty': 'No generation records yet',
+        'video.tasks.pending': 'Pending...',
+        'video.tasks.processing': 'Generating video...',
+        'video.tasks.succeed': 'Succeeded',
+        'video.tasks.failed': 'Failed',
+        'video.tasks.download': 'Download',
+        'video.tasks.retry': 'Retry',
+        'video.tasks.remove': 'Remove',
+        'video.tasks.play': 'Play',
+        'video.error.nokey': 'Please add your OpenRouter API Key in Settings to use video generation.',
+        'video.error.noprompt': 'Please generate a Prompt first before submitting.',
 
         // ── Recommend ──
         'recommend.title': '⚡ Smart Recommend',

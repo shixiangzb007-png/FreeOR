@@ -3,9 +3,12 @@
 import { useState, useEffect } from 'react';
 import { VIDEO_PROMPT_TEMPLATES, fillTemplate, extractVariables } from '@/lib/prompts/video-templates';
 import { VideoGenPlatform } from '@/types';
-import { Copy, RefreshCw, Sparkles } from 'lucide-react';
+import { Copy, RefreshCw, Sparkles, Video, Download, Trash2, RotateCcw, Play } from 'lucide-react';
 import { VideoCreditBanner } from '@/components/dashboard/CreditBanner';
 import { useLang } from '@/lib/i18n/lang-context';
+import { useVideoTasks } from '@/lib/hooks/useVideoTasks';
+
+// ── Constants ─────────────────────────────────────────────────
 
 const PLATFORMS: { value: VideoGenPlatform; label: string; color: string }[] = [
     { value: 'all', label: '全部', color: '#6b7280' },
@@ -18,39 +21,78 @@ const PLATFORMS: { value: VideoGenPlatform; label: string; color: string }[] = [
     { value: 'openart', label: 'OpenArt', color: '#f97316' },
 ];
 
+const VIDEO_MODELS = [
+    { id: 'wan-ai/wan2.1-t2v-turbo', name: 'Wan 2.1 Turbo (Free)', badge: 'FREE' },
+    { id: 'wan-ai/wan2.1-i2v-480p', name: 'Wan 2.1 480p', badge: null },
+    { id: 'google/veo-3.1', name: 'Google Veo 3.1', badge: 'PAID' },
+];
+
+// ── Status Badge ──────────────────────────────────────────────
+
+function StatusBadge({ status, t }: { status: string; t: (k: string) => string }) {
+    const styles: Record<string, string> = {
+        pending:    'bg-yellow-500/15 text-yellow-400 border-yellow-500/20',
+        processing: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+        succeed:    'bg-green-500/15 text-green-400 border-green-500/20',
+        failed:     'bg-red-500/15 text-red-400 border-red-500/20',
+    };
+    const labelKey: Record<string, string> = {
+        pending:    'video.tasks.pending',
+        processing: 'video.tasks.processing',
+        succeed:    'video.tasks.succeed',
+        failed:     'video.tasks.failed',
+    };
+    return (
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${styles[status] || styles.pending}`}>
+            {t(labelKey[status] || 'video.tasks.pending')}
+        </span>
+    );
+}
+
+// ── Main Page ─────────────────────────────────────────────────
+
 export default function VideoPage() {
-    const { t } = useLang();
+    const { t, lang } = useLang();
+    const { tasks, isLoaded, submitTask, removeTask, retryTask } = useVideoTasks();
+
     const [selectedPlatform, setSelectedPlatform] = useState<VideoGenPlatform>('all');
     const [selectedTemplateId, setSelectedTemplateId] = useState(VIDEO_PROMPT_TEMPLATES[0].id);
+    const [selectedModel, setSelectedModel] = useState(VIDEO_MODELS[0].id);
     const [description, setDescription] = useState('');
     const [generatedPrompt, setGeneratedPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [copied, setCopied] = useState(false);
     const [history, setHistory] = useState<string[]>([]);
-    
-    // 从 localStorage 恢复历史记录 (Client Only)
+    const [apiKey, setApiKey] = useState('');
+    const [submitError, setSubmitError] = useState('');
+
+    // Load prompt history and API key from localStorage
     useEffect(() => {
         try {
             const saved = localStorage.getItem('video_prompt_history');
             if (saved) setHistory(JSON.parse(saved));
-        } catch (e) {
-            console.error('Failed to parse video prompt history from localStorage', e);
-        }
+        } catch { /* noop */ }
+        try {
+            const settings = localStorage.getItem('freeor-settings');
+            if (settings) {
+                const parsed = JSON.parse(settings);
+                if (parsed.openrouter_key) setApiKey(parsed.openrouter_key);
+            }
+        } catch { /* noop */ }
     }, []);
 
     const filteredTemplates = VIDEO_PROMPT_TEMPLATES.filter(
-        t => selectedPlatform === 'all' || t.platform === selectedPlatform || t.platform === 'all'
+        tmpl => selectedPlatform === 'all' || tmpl.platform === selectedPlatform || tmpl.platform === 'all'
     );
-    const selectedTemplate = filteredTemplates.find(t => t.id === selectedTemplateId) || filteredTemplates[0];
+    const selectedTemplate = filteredTemplates.find(tmpl => tmpl.id === selectedTemplateId) || filteredTemplates[0];
 
-    async function handleGenerate() {
+    async function handleGeneratePrompt() {
         if (!description.trim() || !selectedTemplate) return;
         setIsGenerating(true);
 
         const variables: Record<string, string> = {};
-        extractVariables(selectedTemplate.template).forEach(v => {
-            variables[v] = description;
-        });
+        extractVariables(selectedTemplate.template).forEach(v => { variables[v] = description; });
         variables['subject'] = description;
         variables['topic'] = description;
         variables['theme'] = description;
@@ -60,12 +102,24 @@ export default function VideoPage() {
         setGeneratedPrompt(prompt);
         setIsGenerating(false);
 
-        // 更新 State 的同时写入 LocalStorage，保留最近 20 条
         setHistory(prev => {
             const next = [prompt, ...prev.slice(0, 19)];
             localStorage.setItem('video_prompt_history', JSON.stringify(next));
             return next;
         });
+    }
+
+    async function handleSubmitVideo() {
+        setSubmitError('');
+        if (!apiKey) return setSubmitError(t('video.error.nokey'));
+        if (!generatedPrompt.trim()) return setSubmitError(t('video.error.noprompt'));
+
+        setIsSubmitting(true);
+        try {
+            await submitTask({ prompt: generatedPrompt, model: selectedModel, lang }, apiKey);
+        } finally {
+            setIsSubmitting(false);
+        }
     }
 
     function copyPrompt() {
@@ -82,7 +136,7 @@ export default function VideoPage() {
                 <p className="text-sm text-white/40 mt-1">{t('video.subtitle')}</p>
             </div>
 
-            {/* 今日额度 — 常驻内联展示 */}
+            {/* Credits — always visible */}
             <div className="p-4 rounded-2xl bg-white/3 border border-white/8">
                 <div className="flex items-center gap-2 mb-3">
                     <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -166,26 +220,72 @@ export default function VideoPage() {
                         />
                     </div>
 
+                    {/* Generate Prompt Button */}
                     <button
-                        onClick={handleGenerate}
+                        onClick={handleGeneratePrompt}
                         disabled={!description.trim() || isGenerating}
                         className="w-full h-12 rounded-xl bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold text-sm flex items-center justify-center gap-2 transition-all"
                     >
                         {isGenerating ? (
-                            <>
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                                {t('video.generating')}
-                            </>
+                            <><RefreshCw className="w-4 h-4 animate-spin" />{t('video.generating')}</>
                         ) : (
-                            <>
-                                <Sparkles className="w-4 h-4" />
-                                {t('video.generate')}
-                            </>
+                            <><Sparkles className="w-4 h-4" />{t('video.generate')}</>
+                        )}
+                    </button>
+
+                    {/* ── Video Model Selector ── */}
+                    <div>
+                        <label className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-2 block">
+                            {t('video.model.label')}
+                        </label>
+                        <div className="grid grid-cols-1 gap-1.5">
+                            {VIDEO_MODELS.map(m => (
+                                <button
+                                    key={m.id}
+                                    onClick={() => setSelectedModel(m.id)}
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-sm transition-all ${selectedModel === m.id
+                                            ? 'border-blue-500/40 bg-blue-500/10 text-blue-300'
+                                            : 'border-white/8 bg-white/3 text-white/50 hover:border-white/15'
+                                        }`}
+                                >
+                                    <Video className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="flex-1 font-medium">{m.name}</span>
+                                    {m.badge && (
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                            m.badge === 'FREE' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+                                        }`}>{m.badge}</span>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* ── Submit Video Button ── */}
+                    {submitError && (
+                        <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                            {submitError}
+                        </p>
+                    )}
+                    <button
+                        onClick={handleSubmitVideo}
+                        disabled={isSubmitting || !generatedPrompt.trim()}
+                        className={`w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                            !apiKey
+                                ? 'bg-white/5 border border-white/10 text-white/30 cursor-not-allowed'
+                                : 'bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:cursor-not-allowed'
+                        }`}
+                    >
+                        {isSubmitting ? (
+                            <><RefreshCw className="w-4 h-4 animate-spin" />{t('video.generate.btn.loading')}</>
+                        ) : !apiKey ? (
+                            <><Video className="w-4 h-4" />{t('video.generate.btn.nokey')}</>
+                        ) : (
+                            <><Video className="w-4 h-4" />{t('video.generate.btn')}</>
                         )}
                     </button>
                 </div>
 
-                {/* Right: Preview */}
+                {/* Right: Preview + Tasks */}
                 <div className="space-y-4">
                     {/* Generated prompt */}
                     <div>
@@ -207,18 +307,18 @@ export default function VideoPage() {
                             value={generatedPrompt}
                             onChange={e => setGeneratedPrompt(e.target.value)}
                             placeholder={t('video.prompt.placeholder')}
-                            rows={12}
+                            rows={10}
                             className="w-full px-4 py-3 rounded-xl bg-white/3 border border-white/8 text-sm text-white/80 placeholder:text-white/20 focus:outline-none focus:border-green-500/30 resize-none font-mono leading-relaxed transition-all"
                         />
                     </div>
 
-                    {/* History */}
+                    {/* Prompt history */}
                     {history.length > 1 && (
                         <div>
                             <label className="text-xs text-white/40 font-semibold uppercase tracking-wider mb-2 block">
                                 {t('video.history')}
                             </label>
-                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                            <div className="space-y-2 max-h-32 overflow-y-auto">
                                 {history.slice(1).map((h, i) => (
                                     <div
                                         key={i}
@@ -231,6 +331,101 @@ export default function VideoPage() {
                             </div>
                         </div>
                     )}
+
+                    {/* ── Video Tasks Panel ── */}
+                    <div>
+                        <label className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-3 block">
+                            {t('video.tasks.title')}
+                        </label>
+
+                        {!isLoaded || tasks.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-8 text-white/20">
+                                <Video className="w-8 h-8 mb-2 opacity-30" />
+                                <p className="text-xs">{t('video.tasks.empty')}</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                                {tasks.map(task => (
+                                    <div
+                                        key={task.local_id}
+                                        className={`rounded-xl border p-3 transition-all ${
+                                            task.status === 'succeed'
+                                                ? 'border-green-500/20 bg-green-500/5'
+                                                : task.status === 'failed'
+                                                ? 'border-red-500/20 bg-red-500/5'
+                                                : 'border-white/8 bg-white/3'
+                                        }`}
+                                    >
+                                        {/* Task header */}
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                            <StatusBadge status={task.status} t={t} />
+                                            <span className="text-[10px] text-white/25">
+                                                {new Date(task.created_at).toLocaleTimeString(lang === 'zh' ? 'zh-CN' : 'en-US', {
+                                                    hour: '2-digit', minute: '2-digit'
+                                                })}
+                                            </span>
+                                        </div>
+
+                                        <p className="text-xs text-white/50 font-mono line-clamp-2 mb-2">
+                                            {task.prompt.slice(0, 120)}...
+                                        </p>
+                                        <p className="text-[10px] text-white/25 mb-2">{task.model}</p>
+
+                                        {/* Error */}
+                                        {task.status === 'failed' && task.error && (
+                                            <p className="text-xs text-red-400 bg-red-500/10 rounded px-2 py-1 mb-2">
+                                                {task.error}
+                                            </p>
+                                        )}
+
+                                        {/* Video player */}
+                                        {task.status === 'succeed' && task.video_url && (
+                                            <div className="mb-2 rounded-lg overflow-hidden">
+                                                <video
+                                                    src={task.video_url}
+                                                    controls
+                                                    loop
+                                                    className="w-full max-h-48 object-contain bg-black"
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Action buttons */}
+                                        <div className="flex gap-1.5">
+                                            {task.status === 'succeed' && task.video_url && (
+                                                <a
+                                                    href={task.video_url}
+                                                    download
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-green-500/15 text-green-400 hover:bg-green-500/25 transition-colors"
+                                                >
+                                                    <Download className="w-3 h-3" />
+                                                    {t('video.tasks.download')}
+                                                </a>
+                                            )}
+                                            {task.status === 'failed' && (
+                                                <button
+                                                    onClick={() => retryTask(task.local_id, apiKey)}
+                                                    className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 transition-colors"
+                                                >
+                                                    <RotateCcw className="w-3 h-3" />
+                                                    {t('video.tasks.retry')}
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => removeTask(task.local_id)}
+                                                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-white/5 text-white/30 hover:bg-white/10 hover:text-red-400 transition-colors ml-auto"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                                {t('video.tasks.remove')}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
