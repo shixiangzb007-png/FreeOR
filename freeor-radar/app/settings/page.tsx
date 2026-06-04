@@ -1,10 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Bell, Key, MessageCircle, Globe, Save, Check, Twitter } from 'lucide-react';
+import { Bell, Key, MessageCircle, Globe, Save, Check, Twitter, Cloud, CloudOff, RefreshCw } from 'lucide-react';
 import { useLang } from '@/lib/i18n/lang-context';
 
 const STORAGE_KEY = 'freeor-settings';
+const CLIENT_ID_KEY = 'freeor-client-id';
+
+/** Stable per-browser id used to own anonymous notification subscriptions. */
+function getClientId(): string {
+    if (typeof window === 'undefined') return '';
+    let id = localStorage.getItem(CLIENT_ID_KEY);
+    if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem(CLIENT_ID_KEY, id);
+    }
+    return id;
+}
+
+type SyncStatus = 'idle' | 'saving' | 'ok' | 'error';
 
 interface Settings {
     notify_new_models: boolean;
@@ -46,10 +60,13 @@ export default function SettingsPage() {
     const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
     const [saved, setSaved] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+    const [syncError, setSyncError] = useState('');
 
     // Hydration-safe: load from localStorage after mount
     useEffect(() => {
         setSettings(loadSettings());
+        getClientId(); // ensure a client id exists
         setMounted(true);
     }, []);
 
@@ -57,10 +74,46 @@ export default function SettingsPage() {
         setSettings(prev => ({ ...prev, [key]: value }));
     }
 
-    function handleSave() {
+    /** Map the three notification toggles to subscription event_types. */
+    function deriveEventTypes(s: Settings): string[] {
+        const types: string[] = [];
+        if (s.notify_new_models) types.push('new');
+        if (s.notify_removed_models) types.push('removed');
+        if (s.notify_limit_changes) types.push('limit_change');
+        return types.length > 0 ? types : ['new', 'removed'];
+    }
+
+    async function handleSave() {
+        // Always persist locally first (instant UX, source of truth for the form).
         saveSettings(settings);
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
+
+        // Sync Telegram / Discord targets to the server so the hourly Cron can push to them.
+        setSyncError('');
+        setSyncStatus('saving');
+        try {
+            const res = await fetch('/api/subscriptions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    client_id: getClientId(),
+                    telegram: settings.telegram.trim(),
+                    discord: settings.discord.trim(),
+                    event_types: deriveEventTypes(settings),
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                if (data?.error === 'INVALID_TELEGRAM') throw new Error(t('settings.sync.invalid_telegram'));
+                if (data?.error === 'INVALID_DISCORD') throw new Error(t('settings.sync.invalid_discord'));
+                throw new Error(data?.message || data?.error || t('settings.sync.failed'));
+            }
+            setSyncStatus('ok');
+        } catch (err) {
+            setSyncStatus('error');
+            setSyncError(err instanceof Error ? err.message : t('settings.sync.failed'));
+        }
     }
 
     if (!mounted) {
@@ -105,6 +158,7 @@ export default function SettingsPage() {
                 {/* Notification channels */}
                 <div className="space-y-3 pt-2 border-t border-white/5">
                     <p className="text-xs text-white/40 font-semibold uppercase tracking-wider">{t('settings.channels')}</p>
+                    <p className="text-[11px] text-white/30 leading-relaxed">{t('settings.channels.cloud')}</p>
 
                     <div>
                         <label className="flex items-center gap-2 text-xs text-white/50 mb-1.5">
@@ -201,6 +255,19 @@ export default function SettingsPage() {
 
             {saved && (
                 <p className="text-center text-xs text-green-400/70">{t('settings.saved.hint')}</p>
+            )}
+
+            {/* Cloud sync status for Telegram / Discord subscriptions */}
+            {syncStatus !== 'idle' && (
+                <div className={`flex items-center justify-center gap-2 text-xs ${
+                    syncStatus === 'ok' ? 'text-green-400/80'
+                    : syncStatus === 'error' ? 'text-red-400'
+                    : 'text-white/40'
+                }`}>
+                    {syncStatus === 'saving' && <><RefreshCw className="w-3.5 h-3.5 animate-spin" />{t('settings.sync.saving')}</>}
+                    {syncStatus === 'ok' && <><Cloud className="w-3.5 h-3.5" />{t('settings.sync.ok')}</>}
+                    {syncStatus === 'error' && <><CloudOff className="w-3.5 h-3.5" />{syncError || t('settings.sync.failed')}</>}
+                </div>
             )}
         </div>
     );

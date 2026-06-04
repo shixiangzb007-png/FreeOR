@@ -21,9 +21,14 @@ const PLATFORMS: { value: VideoGenPlatform; label: string; color: string }[] = [
     { value: 'openart', label: 'OpenArt', color: '#f97316' },
 ];
 
+// OpenRouter 视频生成模型（POST /api/v1/videos）。注意：视频模型均按用量计费，
+// 需使用自己有余额的 OpenRouter Key（BYOK）。ID 来自 /api/v1/videos/models。
 const VIDEO_MODELS = [
-    { id: 'wan-ai/wan2.1-t2v-turbo', name: 'Wan 2.1 Turbo (Free)', badge: 'FREE' },
-    { id: 'wan-ai/wan2.1-i2v-480p', name: 'Wan 2.1 480p', badge: null },
+    { id: 'bytedance/seedance-2.0-fast', name: 'Seedance 2.0 Fast', badge: 'PAID' },
+    { id: 'bytedance/seedance-2.0', name: 'Seedance 2.0', badge: 'PAID' },
+    { id: 'kwaivgi/kling-v3.0-std', name: 'Kling v3.0 Std', badge: 'PAID' },
+    { id: 'alibaba/wan-2.7', name: 'Wan 2.7', badge: 'PAID' },
+    { id: 'google/veo-3.1-fast', name: 'Google Veo 3.1 Fast', badge: 'PAID' },
     { id: 'google/veo-3.1', name: 'Google Veo 3.1', badge: 'PAID' },
 ];
 

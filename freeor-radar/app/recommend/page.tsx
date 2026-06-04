@@ -1,11 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, Send, Copy, ExternalLink, AlertTriangle, Zap, Bot, RefreshCw } from 'lucide-react';
+import { Sparkles, Send, Copy, ExternalLink, AlertTriangle, Zap, Bot, RefreshCw, FlaskConical } from 'lucide-react';
 import { FreeModel, RecommendResult } from '@/types';
 import { useLang } from '@/lib/i18n/lang-context';
 
 const STORAGE_KEY = 'freeor-settings';
+
+/** 从设置中读取已保存的 OpenRouter Key（统一键名，避免与旧版 'openrouter_key' 不一致） */
+function readOpenRouterKey(): string {
+    if (typeof window === 'undefined') return '';
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return '';
+        const settings = JSON.parse(raw);
+        return typeof settings.openrouter_key === 'string' ? settings.openrouter_key : '';
+    } catch {
+        return '';
+    }
+}
 
 const EXAMPLE_TASKS_ZH = [
     '我需要一个支持长文档摘要（100K+ tokens）的免费模型',
@@ -32,17 +45,16 @@ export default function RecommendPage() {
     const [error, setError] = useState<string | null>(null);
     const [apiKey, setApiKey] = useState('');
 
+    // 测试调用状态
+    const [testPrompt, setTestPrompt] = useState('');
+    const [testOpen, setTestOpen] = useState(false);
+    const [isTesting, setIsTesting] = useState(false);
+    const [testError, setTestError] = useState<string | null>(null);
+    const [testResult, setTestResult] = useState<{ content: string; model: string; latency_ms: number; usage?: { total_tokens?: number } | null } | null>(null);
+
     // 从 localStorage 读取已保存的 OpenRouter Key
     useEffect(() => {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (raw) {
-                const settings = JSON.parse(raw);
-                if (settings.openrouter_key) setApiKey(settings.openrouter_key);
-            }
-        } catch {
-            // ignore
-        }
+        setApiKey(readOpenRouterKey());
     }, []);
 
     const exampleTasks = lang === 'zh' ? EXAMPLE_TASKS_ZH : EXAMPLE_TASKS_EN;
@@ -54,14 +66,17 @@ export default function RecommendPage() {
         setIsAnalyzing(true);
         setError('');
         setResult(null);
+        setTestOpen(false);
+        setTestResult(null);
+        setTestError(null);
 
         try {
-            const apiKey = localStorage.getItem('openrouter_key') || '';
+            const key = readOpenRouterKey();
             const res = await fetch('/api/recommend', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+                    ...(key ? { 'Authorization': `Bearer ${key}` } : {})
                 },
                 body: JSON.stringify({ task, lang })
             });
@@ -80,6 +95,44 @@ export default function RecommendPage() {
             setError(err instanceof Error ? err.message : t('recommend.error.network'));
         } finally {
             setIsAnalyzing(false);
+        }
+    }
+
+    async function handleTest() {
+        if (!result) return;
+        const key = readOpenRouterKey();
+        if (!key) {
+            setTestError(t('recommend.test.nokey'));
+            return;
+        }
+
+        setIsTesting(true);
+        setTestError(null);
+        setTestResult(null);
+
+        try {
+            const res = await fetch('/api/recommend/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${key}`,
+                },
+                body: JSON.stringify({
+                    model: result.best_model.id,
+                    prompt: testPrompt.trim(),
+                    lang,
+                }),
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || t('recommend.test.error'));
+            }
+            setTestResult(data);
+        } catch (err) {
+            setTestError(err instanceof Error ? err.message : t('recommend.test.error'));
+        } finally {
+            setIsTesting(false);
         }
     }
 
@@ -183,15 +236,24 @@ export default function RecommendPage() {
                                 <p className="text-sm text-white/50 mt-1">{result.best_model.provider}</p>
                                 <p className="text-sm text-white/70 mt-3">{result.reason}</p>
                             </div>
-                            <a
-                                href={`https://openrouter.ai/models/${result.best_model.id}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-green-500/15 border border-green-500/25 text-green-400 text-sm font-medium hover:bg-green-500/20 transition-all"
-                            >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                {t('recommend.view')}
-                            </a>
+                            <div className="flex-shrink-0 flex flex-col gap-2">
+                                <a
+                                    href={`https://openrouter.ai/models/${result.best_model.id}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-green-500/15 border border-green-500/25 text-green-400 text-sm font-medium hover:bg-green-500/20 transition-all"
+                                >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    {t('recommend.view')}
+                                </a>
+                                <button
+                                    onClick={() => setTestOpen(v => !v)}
+                                    className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white/8 border border-white/15 text-white/70 text-sm font-medium hover:bg-white/12 hover:text-white transition-all"
+                                >
+                                    <FlaskConical className="w-3.5 h-3.5" />
+                                    {t('recommend.test')}
+                                </button>
+                            </div>
                         </div>
 
                         {/* Risk warnings */}
@@ -206,6 +268,71 @@ export default function RecommendPage() {
                                         <li key={i} className="text-xs text-yellow-300/70">• {w}</li>
                                     ))}
                                 </ul>
+                            </div>
+                        )}
+
+                        {/* Test call panel */}
+                        {testOpen && (
+                            <div className="mt-4 pt-4 border-t border-white/8 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <FlaskConical className="w-3.5 h-3.5 text-green-400" />
+                                    <span className="text-xs font-semibold text-white/70">{t('recommend.test.title')}</span>
+                                    <code className="text-[11px] text-white/30 font-mono">{result.best_model.id}</code>
+                                </div>
+
+                                {!hasKey ? (
+                                    <div className="p-3 rounded-xl bg-yellow-500/8 border border-yellow-500/15 text-xs text-yellow-300/80 flex items-center gap-2">
+                                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                                        <span>
+                                            {t('recommend.test.nokey')}
+                                            <a href="/settings" className="underline ml-1 hover:text-yellow-200">{t('recommend.test.nokey.link')}</a>
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="relative">
+                                            <textarea
+                                                value={testPrompt}
+                                                onChange={e => setTestPrompt(e.target.value)}
+                                                placeholder={t('recommend.test.prompt')}
+                                                className="w-full h-20 bg-[#111] border border-white/10 rounded-xl p-3 pr-28 text-sm text-white placeholder-white/20 focus:outline-none focus:border-green-500/50 resize-none transition-all"
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleTest();
+                                                }}
+                                            />
+                                            <button
+                                                onClick={handleTest}
+                                                disabled={isTesting}
+                                                className="absolute bottom-3 right-3 px-4 py-1.5 rounded-lg bg-green-500 text-black text-xs font-semibold hover:bg-green-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                                            >
+                                                {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                                                {isTesting ? t('recommend.test.sending') : t('recommend.test.send')}
+                                            </button>
+                                        </div>
+
+                                        {testError && (
+                                            <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
+                                                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                                                <span>{testError}</span>
+                                            </div>
+                                        )}
+
+                                        {testResult && (
+                                            <div className="mt-3">
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <span className="text-[11px] text-white/40 font-medium uppercase">{t('recommend.test.response')}</span>
+                                                    <span className="text-[11px] text-white/30 font-mono">
+                                                        {t('recommend.test.latency')}: {testResult.latency_ms}ms
+                                                        {testResult.usage?.total_tokens != null ? ` · ${testResult.usage.total_tokens} ${t('recommend.test.tokens')}` : ''}
+                                                    </span>
+                                                </div>
+                                                <div className="text-sm text-white/80 bg-white/3 border border-white/8 rounded-lg p-3 whitespace-pre-wrap">
+                                                    {testResult.content || '—'}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>

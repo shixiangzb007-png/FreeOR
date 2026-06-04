@@ -66,10 +66,55 @@ aider --model openrouter/meta-llama/llama-3.1-8b-instruct:free \\
 export OPENAI_API_BASE=https://openrouter.ai/api/v1
 export OPENAI_API_KEY=sk-or-v1-your-api-key-here
 aider --model openrouter/meta-llama/llama-3.1-8b-instruct:free`,
+
+    clawdbot: `# Clawdbot — config.yaml
+# Point the OpenAI-compatible provider at OpenRouter and pick any :free model.
+provider:
+  name: openrouter
+  base_url: https://openrouter.ai/api/v1
+  api_key: \${OPENROUTER_API_KEY}   # export OPENROUTER_API_KEY=sk-or-v1-...
+
+model: meta-llama/llama-3.1-8b-instruct:free
+
+# Optional attribution headers (recommended by OpenRouter)
+headers:
+  HTTP-Referer: https://your-site.com
+  X-Title: Clawdbot
+
+# Run:
+#   export OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+#   clawdbot --config config.yaml`,
+
+    openclaw: `// OpenClaw — openclaw.config.json
+// OpenClaw speaks the OpenAI Chat Completions protocol, so just swap the endpoint.
+{
+  "llm": {
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "apiKey": "\${OPENROUTER_API_KEY}",
+    "model": "meta-llama/llama-3.1-8b-instruct:free",
+    "headers": {
+      "HTTP-Referer": "https://your-site.com",
+      "X-Title": "OpenClaw"
+    }
+  }
+}
+
+// Run:
+//   export OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+//   openclaw start --config openclaw.config.json`,
 };
 
-const TABS = ['python', 'javascript', 'curl', 'aider'] as const;
+const TABS = ['python', 'javascript', 'curl', 'aider', 'clawdbot', 'openclaw'] as const;
 type Tab = typeof TABS[number];
+
+const TAB_LABELS: Record<Tab, string> = {
+    python: 'Python',
+    javascript: 'JavaScript',
+    curl: 'cURL',
+    aider: 'Aider',
+    clawdbot: 'Clawdbot',
+    openclaw: 'OpenClaw',
+};
 
 export default function IntegrationsPage() {
     const { t } = useLang();
@@ -94,17 +139,17 @@ export default function IntegrationsPage() {
                 <h2 className="text-sm font-semibold text-white/80 mb-4">{t('integrations.quickstart')}</h2>
 
                 {/* Tab bar */}
-                <div className="flex gap-1 p-1 bg-white/5 rounded-xl mb-5 w-fit">
+                <div className="flex flex-wrap gap-1 p-1 bg-white/5 rounded-xl mb-5 w-fit max-w-full">
                     {TABS.map(tab => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${activeTab === tab
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab
                                     ? 'bg-white/10 text-white shadow-sm'
                                     : 'text-white/40 hover:text-white/70'
                                 }`}
                         >
-                            {tab}
+                            {TAB_LABELS[tab]}
                         </button>
                     ))}
                 </div>

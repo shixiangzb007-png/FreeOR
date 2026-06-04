@@ -6,8 +6,73 @@ import { notifyDiscord } from '@/lib/notifications/discord';
 import { notifyX } from '@/lib/notifications/x-twitter';
 import { createServiceClient } from '@/lib/supabase/server';
 import { syncLog, flushLogs } from '@/lib/openrouter/sync-logger';
-import { validateCronEnv, isValidDiscordWebhook } from '@/lib/env';
-import { CronResult } from '@/types';
+import { validateCronEnv, isValidDiscordWebhook, isValidTelegramChatId } from '@/lib/env';
+import { CronResult, ModelDiff } from '@/types';
+import { SupabaseClient } from '@supabase/supabase-js';
+
+/** Keep only the change categories the subscriber opted into. */
+function filterDiffByEventTypes(diff: ModelDiff, eventTypes: string[]): ModelDiff {
+    return {
+        added: eventTypes.includes('new') ? diff.added : [],
+        removed: eventTypes.includes('removed') ? diff.removed : [],
+        changed: eventTypes.includes('limit_change') ? diff.changed : [],
+    };
+}
+
+interface SubscriptionRow {
+    channel: string;
+    target: string;
+    event_types: string[] | null;
+}
+
+/**
+ * Fan out notifications to every active per-user subscription saved from the
+ * settings page (stored in notification_subscriptions). Returns the number of
+ * notification calls dispatched.
+ */
+async function notifySubscriptions(
+    supabase: SupabaseClient,
+    diff: ModelDiff
+): Promise<number> {
+    const { data, error } = await supabase
+        .from('notification_subscriptions')
+        .select('channel, target, event_types')
+        .eq('is_active', true);
+
+    if (error) {
+        syncLog('warn', `Could not load subscriptions: ${error.message}`);
+        return 0;
+    }
+
+    const subs = (data || []) as SubscriptionRow[];
+    if (subs.length === 0) return 0;
+
+    const tasks: Promise<void>[] = [];
+
+    for (const sub of subs) {
+        const eventTypes = sub.event_types && sub.event_types.length > 0 ? sub.event_types : ['new', 'removed'];
+        const scoped = filterDiffByEventTypes(diff, eventTypes);
+        if (scoped.added.length === 0 && scoped.removed.length === 0) continue;
+
+        if (sub.channel === 'telegram' && isValidTelegramChatId(sub.target)) {
+            tasks.push(
+                notifyTelegram(scoped, sub.target)
+                    .catch(e => syncLog('error', `Subscriber Telegram notify failed: ${e.message}`))
+            );
+        } else if (sub.channel === 'discord' && isValidDiscordWebhook(sub.target)) {
+            tasks.push(
+                notifyDiscord(scoped, sub.target)
+                    .catch(e => syncLog('error', `Subscriber Discord notify failed: ${e.message}`))
+            );
+        }
+    }
+
+    if (tasks.length > 0) {
+        await Promise.allSettled(tasks);
+        syncLog('info', `Dispatched ${tasks.length} subscriber notification(s)`);
+    }
+    return tasks.length;
+}
 
 /**
  * POST /api/cron
@@ -82,7 +147,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<CronResult>> 
             }
 
             await Promise.allSettled(tasks);
-            notified = tasks.length > 0;
+
+            // Per-user subscriptions saved from the settings page (Telegram / Discord).
+            const subscriberCount = await notifySubscriptions(supabase, diff);
+
+            notified = tasks.length > 0 || subscriberCount > 0;
         } else {
             syncLog('info', 'No changes detected — skipping notifications');
         }

@@ -1,48 +1,32 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { FreeModel } from '@/types';
 import { Eye, Wrench, Code, Copy, ExternalLink, Download, Video, Gauge } from 'lucide-react';
+import { useLang } from '@/lib/i18n/lang-context';
 
-const CAPABILITY_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-    vision: { label: 'Vision', icon: <Eye className="w-3 h-3" />, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20' },
-    tool: { label: 'Tool', icon: <Wrench className="w-3 h-3" />, color: 'text-purple-400 bg-purple-400/10 border-purple-400/20' },
-    coding: { label: 'Code', icon: <Code className="w-3 h-3" />, color: 'text-orange-400 bg-orange-400/10 border-orange-400/20' },
+const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
+    vision: { icon: <Eye className="w-3 h-3" />, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20' },
+    tool: { icon: <Wrench className="w-3 h-3" />, color: 'text-purple-400 bg-purple-400/10 border-purple-400/20' },
+    coding: { icon: <Code className="w-3 h-3" />, color: 'text-orange-400 bg-orange-400/10 border-orange-400/20' },
 };
 
 const ALL_CAPABILITIES = ['vision', 'tool', 'coding'];
+
+const RATE_LEVEL_COLOR: Record<string, string> = {
+    high: 'text-green-400',
+    standard: 'text-yellow-400',
+    low: 'text-red-400',
+    unknown: 'text-white/30',
+};
 
 interface ModelTableClientProps {
     models: FreeModel[];
     initialSearch?: string;
 }
 
-const RATE_LEVEL_CONFIG: Record<string, { label: string; color: string; hint: string }> = {
-    high:     { label: '较高',   color: 'text-green-400',  hint: '限流较宽松（≥200K prompt tokens/次）' },
-    standard: { label: '标准',   color: 'text-yellow-400', hint: '标准速率限制（50K–200K tokens/次）' },
-    low:      { label: '较低',   color: 'text-red-400',    hint: '限流较严（<50K tokens/次）' },
-    unknown:  { label: '未知',   color: 'text-white/30',   hint: '暂无限流数据（来自 OpenRouter API）' },
-};
-
-/** 从 rate_limit_level 字段读取限流级别，补充原始数字作 Tooltip */
-function getRateLimit(model: FreeModel): { label: string; color: string; hint: string } {
-    const level = model.rate_limit_level ?? 'unknown';
-    const cfg = RATE_LEVEL_CONFIG[level] ?? RATE_LEVEL_CONFIG.unknown;
-    // 若有原始 per_request_limits 数据，追加数字到 hint
-    if (model.per_request_limits) {
-        const pt = model.per_request_limits['prompt_tokens'] ?? model.per_request_limits['prompt'];
-        const ct = model.per_request_limits['completion_tokens'] ?? model.per_request_limits['completion'];
-        if (pt || ct) {
-            const parts: string[] = [];
-            if (pt) parts.push(`prompt: ${pt}`);
-            if (ct) parts.push(`completion: ${ct}`);
-            return { ...cfg, hint: `${cfg.hint} · ${parts.join(', ')}` };
-        }
-    }
-    return cfg;
-}
-
 export function ModelTableClient({ models, initialSearch = '' }: ModelTableClientProps) {
+    const { t, lang } = useLang();
     const [search, setSearch] = useState(initialSearch);
     const [selectedCaps, setSelectedCaps] = useState<string[]>([]);
     const [videoOnly, setVideoOnly] = useState(false);
@@ -55,6 +39,38 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
             prev.includes(cap) ? prev.filter(c => c !== cap) : [...prev, cap]
         );
     };
+
+    // 把搜索关键词回写到 URL(?search=)，便于分享/刷新保持。
+    // 用 history.replaceState 避免触发整页导航或滚动跳动；300ms 防抖。
+    useEffect(() => {
+        const handle = setTimeout(() => {
+            const url = new URL(window.location.href);
+            const current = url.searchParams.get('search') || '';
+            if (search === current) return;
+            if (search) url.searchParams.set('search', search);
+            else url.searchParams.delete('search');
+            window.history.replaceState(null, '', url.toString());
+        }, 300);
+        return () => clearTimeout(handle);
+    }, [search]);
+
+    /** 从 rate_limit_level 读取限流级别（i18n），补充原始数字作 Tooltip */
+    function getRateLimit(model: FreeModel): { label: string; color: string; hint: string } {
+        const raw = model.rate_limit_level ?? 'unknown';
+        const level = ['high', 'standard', 'low'].includes(raw) ? raw : 'unknown';
+        const color = RATE_LEVEL_COLOR[level];
+        const label = t(`table.rate.${level}`);
+        let hint = t(`table.rate.${level}.hint`);
+        if (model.per_request_limits) {
+            const pt = model.per_request_limits['prompt_tokens'] ?? model.per_request_limits['prompt'];
+            const ct = model.per_request_limits['completion_tokens'] ?? model.per_request_limits['completion'];
+            const parts: string[] = [];
+            if (pt) parts.push(`prompt: ${pt}`);
+            if (ct) parts.push(`completion: ${ct}`);
+            if (parts.length > 0) hint = `${hint} · ${parts.join(', ')}`;
+        }
+        return { label, color, hint };
+    }
 
     const filtered = useMemo(() => {
         return models
@@ -101,7 +117,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                     type="text"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    placeholder="搜索模型或提供商..."
+                    placeholder={t('filter.search')}
                     className="flex-1 min-w-[200px] h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-green-500/40"
                 />
 
@@ -119,7 +135,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                                     }`}
                             >
                                 {cfg.icon}
-                                {cfg.label}
+                                {t(`table.cap.${cap}`)}
                             </button>
                         );
                     })}
@@ -142,8 +158,8 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                     onChange={e => setSortBy(e.target.value as 'context' | 'last_updated')}
                     className="h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/70 focus:outline-none cursor-pointer"
                 >
-                    <option value="last_updated">最新更新</option>
-                    <option value="context">上下文长度</option>
+                    <option value="last_updated">{t('filter.sort.recent')}</option>
+                    <option value="context">{t('filter.sort.ctx')}</option>
                 </select>
 
                 <button
@@ -154,7 +170,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                     CSV
                 </button>
 
-                <span className="text-xs text-white/30">{filtered.length} 个</span>
+                <span className="text-xs text-white/30">{filtered.length} {t('table.count')}</span>
             </div>
 
             {/* Table */}
@@ -163,25 +179,25 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-white/5 bg-white/3">
-                                <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">模型名称</th>
-                                <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">提供商</th>
+                                <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">{t('table.name')}</th>
+                                <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">{t('table.provider')}</th>
                                 <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold cursor-pointer hover:text-white/60"
                                     onClick={() => { setSortBy('context'); setSortAsc(!sortAsc); }}>
-                                    上下文 {sortBy === 'context' ? (sortAsc ? '↑' : '↓') : ''}
+                                    {t('table.context')} {sortBy === 'context' ? (sortAsc ? '↑' : '↓') : ''}
                                 </th>
-                                <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">能力</th>
+                                <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">{t('table.caps')}</th>
                                 {/* P0: 新增限流提示列 */}
                                 <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">
                                     <span className="flex items-center gap-1">
                                         <Gauge className="w-3 h-3" />
-                                        限流
+                                        {t('table.ratelimit')}
                                     </span>
                                 </th>
                                 <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold cursor-pointer hover:text-white/60"
                                     onClick={() => { setSortBy('last_updated'); setSortAsc(!sortAsc); }}>
-                                    更新时间 {sortBy === 'last_updated' ? (sortAsc ? '↑' : '↓') : ''}
+                                    {t('table.updated')} {sortBy === 'last_updated' ? (sortAsc ? '↑' : '↓') : ''}
                                 </th>
-                                <th className="text-right px-4 py-3 text-xs text-white/40 font-semibold">操作</th>
+                                <th className="text-right px-4 py-3 text-xs text-white/40 font-semibold">{t('table.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -198,7 +214,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                                                     <div className="font-medium text-white/90 text-sm leading-tight flex items-center gap-1.5">
                                                         {model.name}
                                                         {model.is_video_supported && (
-                                                            <span title="支持视频生成" className="inline-flex">
+                                                            <span title={t('table.video_title')} className="inline-flex">
                                                                 <Video className="w-3 h-3 text-purple-400 flex-shrink-0" />
                                                             </span>
                                                         )}
@@ -228,7 +244,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                                                             className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${cfg.color}`}
                                                         >
                                                             {cfg.icon}
-                                                            {cfg.label}
+                                                            {t(`table.cap.${cap}`)}
                                                         </span>
                                                     ) : (
                                                         <span key={cap} className="cap-tag">{cap}</span>
@@ -247,14 +263,14 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                                         </td>
                                         <td className="px-4 py-3">
                                             <span className="text-xs text-white/30">
-                                                {new Date(model.last_updated).toLocaleDateString('zh-CN')}
+                                                {new Date(model.last_updated).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US')}
                                             </span>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2 justify-end">
                                                 <button
                                                     onClick={() => copyId(model.id)}
-                                                    title="复制模型 ID"
+                                                    title={t('table.copy_id')}
                                                     className="p-1.5 rounded-md hover:bg-white/10 text-white/30 hover:text-green-400 transition-all"
                                                 >
                                                     {copied === model.id
@@ -266,7 +282,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                                                     href={`https://openrouter.ai/models/${model.id}`}
                                                     target="_blank"
                                                     rel="noreferrer"
-                                                    title="在 OpenRouter 查看"
+                                                    title={t('table.view_or')}
                                                     className="p-1.5 rounded-md hover:bg-white/10 text-white/30 hover:text-white/70 transition-all"
                                                 >
                                                     <ExternalLink className="w-3.5 h-3.5" />
@@ -279,7 +295,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                             {filtered.length === 0 && (
                                 <tr>
                                     <td colSpan={7} className="px-4 py-12 text-center text-white/30 text-sm">
-                                        没有找到匹配的模型
+                                        {t('table.no_result')}
                                     </td>
                                 </tr>
                             )}
