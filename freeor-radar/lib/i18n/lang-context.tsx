@@ -53,6 +53,9 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
         // ── 导航 & 全局 ──
         'nav.status': '实时监控中',
+        'topbar.search': '搜索模型名称...',
+        'topbar.today': '今日新增',
+        'topbar.notifications': '通知设置',
 
         // ── 仪表盘 ──
         'dashboard.title': '免费模型实时雷达',
@@ -108,7 +111,16 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
         'video.copied': '已复制！',
         'video.history': '历史记录',
         'video.credits.realtime': '实时',
-        'video.credits.sync': '每日 UTC 00:00 重置 · 数据每小时同步',
+        'video.credits.sync': '每日 UTC 01:00 重置 · 显示为各平台公开免费额度上限，并非你账户的实时余额',
+
+        // ── 视频额度 Banner ──
+        'credit.reset.daily': '每日',
+        'credit.reset.unlimited': '无限',
+        'credit.reset.subscription': '订阅',
+        'credit.reset.quota': '配额',
+        'credit.unlimited': '无限制',
+        'credit.remaining': '剩余',
+        'credit.disclaimer': '※ 各平台公开免费额度上限（参考值），非你账户的实时余额',
 
         // ── 视频生成管线 (Video Pipeline) ──
         'video.generate.btn': '🎬 开始生成视频',
@@ -269,6 +281,10 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
         'settings.sync.failed': '云端同步失败，本地已保存',
         'settings.sync.invalid_telegram': 'Telegram Chat ID 格式无效（应为数字，如 -1001234567890）',
         'settings.sync.invalid_discord': 'Discord Webhook 格式无效（应为 https://discord.com/api/webhooks/<id>/<token>）',
+        'settings.test.send': '发送测试',
+        'settings.test.sending': '发送中...',
+        'settings.test.ok': '✅ 测试消息已发送，请查收',
+        'settings.test.fail': '发送失败',
         'settings.apikey.title': 'API Key 管理',
         'settings.apikey.info': 'FreeOR Radar 的所有免费模型列表功能无需 API Key。仅在使用智能推荐的 AI 分析功能时，需要一个 OpenRouter Key（免费注册可得）。',
         'settings.apikey.local': 'Key 仅存储在浏览器本地，不会上传到服务器。',
@@ -283,6 +299,9 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     en: {
         // ── Nav ──
+        'topbar.search': 'Search models...',
+        'topbar.today': 'New today',
+        'topbar.notifications': 'Notification settings',
         'nav.dashboard': 'Dashboard',
         'nav.video': 'Video',
         'nav.recommend': 'Recommend',
@@ -347,7 +366,16 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
         'video.copied': 'Copied!',
         'video.history': 'History',
         'video.credits.realtime': 'Live',
-        'video.credits.sync': 'Resets daily at UTC 00:00 · Synced hourly',
+        'video.credits.sync': "Resets daily at UTC 01:00 · Shows each platform's public free-tier cap, not your account's live balance",
+
+        // ── Video credit banner ──
+        'credit.reset.daily': 'Daily',
+        'credit.reset.unlimited': 'Unlimited',
+        'credit.reset.subscription': 'Subscription',
+        'credit.reset.quota': 'Quota',
+        'credit.unlimited': 'Unlimited',
+        'credit.remaining': 'left',
+        'credit.disclaimer': "※ Public free-tier caps per platform (reference only), not your account's live balance",
 
         // ── Video Pipeline ──
         'video.generate.btn': '🎬 Generate Video',
@@ -508,6 +536,10 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
         'settings.sync.failed': 'Cloud sync failed; saved locally',
         'settings.sync.invalid_telegram': 'Invalid Telegram Chat ID (must be numeric, e.g. -1001234567890)',
         'settings.sync.invalid_discord': 'Invalid Discord webhook (must be https://discord.com/api/webhooks/<id>/<token>)',
+        'settings.test.send': 'Send test',
+        'settings.test.sending': 'Sending...',
+        'settings.test.ok': '✅ Test message sent — check your channel',
+        'settings.test.fail': 'Failed to send',
         'settings.apikey.title': 'API Key Management',
         'settings.apikey.info': 'All free model listing features require no API key. Only the Smart Recommend AI analysis needs an OpenRouter key (free to register).',
         'settings.apikey.local': 'Key is stored locally in your browser only.',

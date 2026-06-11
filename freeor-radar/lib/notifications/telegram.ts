@@ -54,6 +54,20 @@ function buildTelegramMessages(diff: ModelDiff): string[] {
         );
     }
 
+    // Changed models (limit / spec changes)
+    if (diff.changed.length > 0) {
+        const lines = diff.changed.slice(0, 5).map(({ model, changes }) => {
+            const fields = Object.keys(changes).join(', ');
+            return `🔄 \`${escMd(model.name)}\`\n   🛠️ ${escMd(fields)}`;
+        });
+        const more = diff.changed.length > 5 ? `\n${escMd(`…以及另外 ${diff.changed.length - 5} 个`)}` : '';
+        messages.push(
+            `*🔄 模型限流/规格变更 ${escMd(`(${diff.changed.length})`)}\n\n` +
+            lines.join('\n') + more +
+            `\n\n🔗 [FreeOR Radar](https://freeor\\.app)`
+        );
+    }
+
     return messages;
 }
 

@@ -55,20 +55,66 @@ function saveSettings(s: Settings) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
 }
 
+type TestState = 'idle' | 'sending' | 'ok' | 'error';
+
 export default function SettingsPage() {
-    const { t } = useLang();
+    const { t, lang } = useLang();
     const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
     const [saved, setSaved] = useState(false);
     const [mounted, setMounted] = useState(false);
     const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
     const [syncError, setSyncError] = useState('');
+    const [testState, setTestState] = useState<Record<string, TestState>>({});
+    const [testErrors, setTestErrors] = useState<Record<string, string>>({});
 
     // Hydration-safe: load from localStorage after mount
     useEffect(() => {
         setSettings(loadSettings());
-        getClientId(); // ensure a client id exists
+        const cid = getClientId(); // ensure a client id exists
         setMounted(true);
+
+        // 回读云端订阅：换设备/清缓存后仍能看到已生效的推送配置
+        fetch(`/api/subscriptions?client_id=${encodeURIComponent(cid)}`)
+            .then(res => (res.ok ? res.json() : null))
+            .then(data => {
+                if (!data || (!data.telegram && !data.discord)) return;
+                const ev: string[] = Array.isArray(data.event_types) ? data.event_types : [];
+                setSettings(prev => ({
+                    ...prev,
+                    telegram: data.telegram || prev.telegram,
+                    discord: data.discord || prev.discord,
+                    notify_new_models: ev.includes('new'),
+                    notify_removed_models: ev.includes('removed'),
+                    notify_limit_changes: ev.includes('limit_change'),
+                }));
+            })
+            .catch(() => { /* 离线或服务端未配置时静默，使用本地值 */ });
     }, []);
+
+    async function handleTestChannel(channel: 'telegram' | 'discord') {
+        const target = (channel === 'telegram' ? settings.telegram : settings.discord).trim();
+        if (!target) return;
+
+        setTestState(prev => ({ ...prev, [channel]: 'sending' }));
+        setTestErrors(prev => ({ ...prev, [channel]: '' }));
+        try {
+            const res = await fetch('/api/subscriptions/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel, target, lang }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data?.error || t('settings.test.fail'));
+            setTestState(prev => ({ ...prev, [channel]: 'ok' }));
+            setTimeout(() => setTestState(prev => ({ ...prev, [channel]: 'idle' })), 5000);
+        } catch (err) {
+            setTestState(prev => ({ ...prev, [channel]: 'error' }));
+            setTestErrors(prev => ({
+                ...prev,
+                [channel]: err instanceof Error ? err.message : t('settings.test.fail'),
+            }));
+        }
+    }
 
     function update<K extends keyof Settings>(key: K, value: Settings[K]) {
         setSettings(prev => ({ ...prev, [key]: value }));
@@ -165,14 +211,29 @@ export default function SettingsPage() {
                             <MessageCircle className="w-3.5 h-3.5" />
                             Telegram Chat ID
                         </label>
-                        <input
-                            type="text"
-                            value={settings.telegram}
-                            onChange={e => update('telegram', e.target.value)}
-                            placeholder="-1001234567890"
-                            className="w-full h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-green-500/40"
-                        />
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={settings.telegram}
+                                onChange={e => update('telegram', e.target.value)}
+                                placeholder="-1001234567890"
+                                className="flex-1 h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-green-500/40"
+                            />
+                            <button
+                                onClick={() => handleTestChannel('telegram')}
+                                disabled={!settings.telegram.trim() || testState.telegram === 'sending'}
+                                className="h-9 px-3 rounded-lg bg-white/8 border border-white/15 text-xs text-white/60 hover:text-white hover:bg-white/12 disabled:opacity-40 disabled:cursor-not-allowed transition-all whitespace-nowrap"
+                            >
+                                {testState.telegram === 'sending' ? t('settings.test.sending') : t('settings.test.send')}
+                            </button>
+                        </div>
                         <p className="text-[11px] text-white/20 mt-1">{t('settings.telegram.hint')}</p>
+                        {testState.telegram === 'ok' && (
+                            <p className="text-[11px] text-green-400 mt-1">{t('settings.test.ok')}</p>
+                        )}
+                        {testState.telegram === 'error' && (
+                            <p className="text-[11px] text-red-400 mt-1">{testErrors.telegram || t('settings.test.fail')}</p>
+                        )}
                     </div>
 
                     <div>
@@ -180,13 +241,28 @@ export default function SettingsPage() {
                             <Globe className="w-3.5 h-3.5" />
                             Discord Webhook URL
                         </label>
-                        <input
-                            type="text"
-                            value={settings.discord}
-                            onChange={e => update('discord', e.target.value)}
-                            placeholder="https://discord.com/api/webhooks/..."
-                            className="w-full h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-green-500/40"
-                        />
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={settings.discord}
+                                onChange={e => update('discord', e.target.value)}
+                                placeholder="https://discord.com/api/webhooks/..."
+                                className="flex-1 h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-green-500/40"
+                            />
+                            <button
+                                onClick={() => handleTestChannel('discord')}
+                                disabled={!settings.discord.trim() || testState.discord === 'sending'}
+                                className="h-9 px-3 rounded-lg bg-white/8 border border-white/15 text-xs text-white/60 hover:text-white hover:bg-white/12 disabled:opacity-40 disabled:cursor-not-allowed transition-all whitespace-nowrap"
+                            >
+                                {testState.discord === 'sending' ? t('settings.test.sending') : t('settings.test.send')}
+                            </button>
+                        </div>
+                        {testState.discord === 'ok' && (
+                            <p className="text-[11px] text-green-400 mt-1">{t('settings.test.ok')}</p>
+                        )}
+                        {testState.discord === 'error' && (
+                            <p className="text-[11px] text-red-400 mt-1">{testErrors.discord || t('settings.test.fail')}</p>
+                        )}
                     </div>
 
                     <div className="p-3 rounded-xl bg-blue-500/8 border border-blue-500/15">

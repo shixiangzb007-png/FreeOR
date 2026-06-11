@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { isValidDiscordWebhook, isValidTelegramChatId } from '@/lib/env';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
  * Notification subscriptions API (no-auth / anonymous).
@@ -60,6 +61,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+    // 防滥用：每 IP 每分钟最多 10 次写入
+    if (!rateLimit(`sub:${clientIp(req)}`, 10, 60_000)) {
+        return NextResponse.json({ error: 'Too many requests, please retry later' }, { status: 429 });
+    }
+
     let clientId = '';
     let telegram = '';
     let discord = '';

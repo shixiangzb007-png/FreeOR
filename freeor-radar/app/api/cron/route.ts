@@ -52,7 +52,7 @@ async function notifySubscriptions(
     for (const sub of subs) {
         const eventTypes = sub.event_types && sub.event_types.length > 0 ? sub.event_types : ['new', 'removed'];
         const scoped = filterDiffByEventTypes(diff, eventTypes);
-        if (scoped.added.length === 0 && scoped.removed.length === 0) continue;
+        if (scoped.added.length === 0 && scoped.removed.length === 0 && scoped.changed.length === 0) continue;
 
         if (sub.channel === 'telegram' && isValidTelegramChatId(sub.target)) {
             tasks.push(
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CronResult>> 
 
         // ── Step 3: Notify on changes ─────────────────────────────
         let notified = false;
-        const hasChanges = diff.added.length > 0 || diff.removed.length > 0;
+        const hasChanges = diff.added.length > 0 || diff.removed.length > 0 || diff.changed.length > 0;
 
         if (hasChanges) {
             syncLog('info', `Changes detected — sending notifications...`);

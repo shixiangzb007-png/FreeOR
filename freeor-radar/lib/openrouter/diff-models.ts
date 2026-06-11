@@ -23,17 +23,19 @@ export async function diffAndSyncModels(
 ): Promise<ModelDiff> {
     syncLog('info', `Diffing ${newModels.length} fetched models against database...`);
 
-    // ── 1. Read existing free models ──────────────────────────
+    // ── 1. Read ALL existing models (incl. soft-deleted) ──────
+    // Soft-deleted rows (is_free=false) are needed to distinguish
+    // "restored" models from genuinely "new" ones.
     let existing: FreeModel[] = [];
     try {
         const { data, error } = await supabase
             .from('free_models')
-            .select('*')
-            .eq('is_free', true);
+            .select('*');
 
         if (error) throw new Error(error.message);
         existing = (data as FreeModel[]) || [];
-        syncLog('info', `Loaded ${existing.length} existing free models from DB`);
+        const freeCount = existing.filter(m => m.is_free !== false).length;
+        syncLog('info', `Loaded ${existing.length} existing models from DB (${freeCount} free, ${existing.length - freeCount} soft-deleted)`);
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         syncLog('error', `Failed to read existing models from DB: ${msg}`);
@@ -45,17 +47,25 @@ export async function diffAndSyncModels(
     const newMap = new Map<string, FreeModel>(newModels.map(m => [m.id, m]));
 
     const diff: ModelDiff = { added: [], removed: [], changed: [] };
+    // Models that were soft-deleted and are back on the free list.
+    // They stay inside diff.added (they ARE newly available to users)
+    // but get logged as change_type 'restored'.
+    const restoredIds = new Set<string>();
 
-    // Newly added models
+    // Newly added / restored models
     for (const [id, model] of newMap) {
-        if (!existingMap.has(id)) {
+        const old = existingMap.get(id);
+        if (!old) {
             diff.added.push(model);
+        } else if (old.is_free === false) {
+            diff.added.push(model);
+            restoredIds.add(id);
         }
     }
 
-    // Removed models (soft-delete candidates)
+    // Removed models (soft-delete candidates) — only currently-free rows
     for (const [id, model] of existingMap) {
-        if (!newMap.has(id)) {
+        if (model.is_free !== false && !newMap.has(id)) {
             diff.removed.push(model);
         }
     }
@@ -63,7 +73,8 @@ export async function diffAndSyncModels(
     // Changed models (context or video support changed)
     for (const [id, newModel] of newMap) {
         const oldModel = existingMap.get(id);
-        if (!oldModel) continue;
+        // Skip unknown and restored models (those are handled above)
+        if (!oldModel || oldModel.is_free === false) continue;
 
         const changes: Record<string, { old: unknown; new: unknown }> = {};
 
@@ -85,7 +96,7 @@ export async function diffAndSyncModels(
         }
     }
 
-    syncLog('info', `Diff result: +${diff.added.length} new, -${diff.removed.length} removed, ~${diff.changed.length} changed`);
+    syncLog('info', `Diff result: +${diff.added.length} new (${restoredIds.size} restored), -${diff.removed.length} removed, ~${diff.changed.length} changed`);
 
     // ── 3. Upsert all current free models ─────────────────────
     // Skill: ON CONFLICT (id) DO UPDATE — upsert idempotent
@@ -129,8 +140,10 @@ export async function diffAndSyncModels(
     const changeLogs = [
         ...diff.added.map(m => ({
             model_id: m.id,
-            change_type: 'new' as const,
-            description: `New free model: ${m.name}${m.is_video_supported ? ' [VIDEO]' : ''}`,
+            change_type: (restoredIds.has(m.id) ? 'restored' : 'new') as 'restored' | 'new',
+            description: restoredIds.has(m.id)
+                ? `Model restored to free tier: ${m.name}`
+                : `New free model: ${m.name}${m.is_video_supported ? ' [VIDEO]' : ''}`,
             new_data: {
                 id: m.id,
                 name: m.name,

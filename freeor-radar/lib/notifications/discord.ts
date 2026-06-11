@@ -48,5 +48,18 @@ function buildDiscordEmbeds(diff: ModelDiff) {
         });
     }
 
+    if (diff.changed.length > 0) {
+        embeds.push({
+            title: `🔄 ${diff.changed.length} 个模型限流/规格变更`,
+            color: 0xeab308, // yellow
+            description: diff.changed
+                .slice(0, 10)
+                .map(({ model, changes }) => `**${model.name}** · \`${Object.keys(changes).join(', ')}\``)
+                .join('\n'),
+            footer: { text: 'FreeOR Radar · freeor.app' },
+            timestamp: new Date().toISOString(),
+        });
+    }
+
     return embeds.slice(0, 10); // Discord max 10 embeds per message
 }

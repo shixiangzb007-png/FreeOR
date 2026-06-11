@@ -3,16 +3,18 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { VideoCredit } from '@/types';
+import { useLang } from '@/lib/i18n/lang-context';
 
-// P1: 新增 Higgsfield 和 OpenArt
-const PLATFORM_META: Record<string, { color: string; label: string; icon: string; reset: string }> = {
-    kling: { color: '#3b82f6', label: 'Kling', icon: '🎬', reset: '每日' },
-    genmo: { color: '#8b5cf6', label: 'Genmo', icon: '∞', reset: '无限' },
-    pika: { color: '#f59e0b', label: 'Pika', icon: '⚡', reset: '每日' },
-    runway: { color: '#6366f1', label: 'Runway', icon: '🛸', reset: '订阅' },
-    veo: { color: '#06b6d4', label: 'Veo 2', icon: '🌊', reset: '配额' },
-    higgsfield: { color: '#ec4899', label: 'Higgsfield', icon: '🎯', reset: '每日' },
-    openart: { color: '#f97316', label: 'OpenArt', icon: '🎨', reset: '每日' },
+// P1: 新增 Higgsfield 和 OpenArt。reset 为 i18n key 后缀（credit.reset.*）
+type ResetKind = 'daily' | 'unlimited' | 'subscription' | 'quota';
+const PLATFORM_META: Record<string, { color: string; label: string; icon: string; reset: ResetKind }> = {
+    kling: { color: '#3b82f6', label: 'Kling', icon: '🎬', reset: 'daily' },
+    genmo: { color: '#8b5cf6', label: 'Genmo', icon: '∞', reset: 'unlimited' },
+    pika: { color: '#f59e0b', label: 'Pika', icon: '⚡', reset: 'daily' },
+    runway: { color: '#6366f1', label: 'Runway', icon: '🛸', reset: 'subscription' },
+    veo: { color: '#06b6d4', label: 'Veo 2', icon: '🌊', reset: 'quota' },
+    higgsfield: { color: '#ec4899', label: 'Higgsfield', icon: '🎯', reset: 'daily' },
+    openart: { color: '#f97316', label: 'OpenArt', icon: '🎨', reset: 'daily' },
 };
 
 interface VideoCreditBannerProps {
@@ -21,6 +23,7 @@ interface VideoCreditBannerProps {
 }
 
 export function VideoCreditBanner({ compact = false }: VideoCreditBannerProps) {
+    const { t } = useLang();
     const [credits, setCredits] = useState<VideoCredit[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -80,7 +83,7 @@ export function VideoCreditBanner({ compact = false }: VideoCreditBannerProps) {
                 {platforms.map(c => {
                     const meta = PLATFORM_META[c.tool];
                     if (!meta) return null;
-                    const isUnlimited = meta.reset === '无限' || c.daily_credits === 999999;
+                    const isUnlimited = meta.reset === 'unlimited' || c.daily_credits === 999999;
                     const pct = isUnlimited ? 100 : c.daily_credits > 0
                         ? Math.max(0, Math.round(((c.daily_credits - c.used_today) / c.daily_credits) * 100))
                         : 0;
@@ -107,7 +110,7 @@ export function VideoCreditBanner({ compact = false }: VideoCreditBannerProps) {
                                     />
                                 </div>
                             </div>
-                            <span className="text-[10px] text-white/20 flex-shrink-0">{meta.reset}</span>
+                            <span className="text-[10px] text-white/20 flex-shrink-0">{t(`credit.reset.${meta.reset}`)}</span>
                         </div>
                     );
                 })}
@@ -117,11 +120,12 @@ export function VideoCreditBanner({ compact = false }: VideoCreditBannerProps) {
 
     // 仪表盘横排版（原样式）
     return (
+        <div>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
             {platforms.map(c => {
                 const meta = PLATFORM_META[c.tool];
                 if (!meta) return null;
-                const isUnlimited = meta.reset === '无限' || c.daily_credits === 999999;
+                const isUnlimited = meta.reset === 'unlimited' || c.daily_credits === 999999;
                 const pct = isUnlimited ? 100 : c.daily_credits > 0
                     ? Math.max(0, Math.round(((c.daily_credits - c.used_today) / c.daily_credits) * 100))
                     : 0;
@@ -148,11 +152,14 @@ export function VideoCreditBanner({ compact = false }: VideoCreditBannerProps) {
                             />
                         </div>
                         <span className="text-[10px] text-white/20">
-                            {isUnlimited ? '无限制' : `${pct}% 剩余`}
+                            {isUnlimited ? t('credit.unlimited') : `${pct}% ${t('credit.remaining')}`}
                         </span>
                     </div>
                 );
             })}
+        </div>
+        {/* 诚实标注：这些是平台公开免费额度上限，不是用户账户实时余额 */}
+        <p className="text-[10px] text-white/20 mt-3">{t('credit.disclaimer')}</p>
         </div>
     );
 }
