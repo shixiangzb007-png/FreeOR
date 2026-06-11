@@ -26,6 +26,11 @@ export interface FreeModel {
   };
   throughput_tokens_per_s: number | null;
   latency_ms: number | null;
+  /** Probe-derived: healthy | slow | rate_limited | down | unknown */
+  availability_status?: string | null;
+  last_probed_at?: string | null;
+  /** Rolling success rate 0–1 from periodic probes */
+  probe_success_rate?: number | null;
   /** ISO8601 timestamp of last sync */
   last_updated: string;
   /** True while model remains in OpenRouter free list */

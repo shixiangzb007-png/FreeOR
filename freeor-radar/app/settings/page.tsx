@@ -3,20 +3,9 @@
 import { useState, useEffect } from 'react';
 import { Bell, Key, MessageCircle, Globe, Save, Check, Twitter, Cloud, CloudOff, RefreshCw } from 'lucide-react';
 import { useLang } from '@/lib/i18n/lang-context';
+import { getClientId } from '@/lib/client-id';
 
 const STORAGE_KEY = 'freeor-settings';
-const CLIENT_ID_KEY = 'freeor-client-id';
-
-/** Stable per-browser id used to own anonymous notification subscriptions. */
-function getClientId(): string {
-    if (typeof window === 'undefined') return '';
-    let id = localStorage.getItem(CLIENT_ID_KEY);
-    if (!id) {
-        id = crypto.randomUUID();
-        localStorage.setItem(CLIENT_ID_KEY, id);
-    }
-    return id;
-}
 
 type SyncStatus = 'idle' | 'saving' | 'ok' | 'error';
 

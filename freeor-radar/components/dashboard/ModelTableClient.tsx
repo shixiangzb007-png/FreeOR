@@ -2,8 +2,9 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { FreeModel } from '@/types';
-import { Eye, Wrench, Code, Copy, ExternalLink, Download, Video, Gauge } from 'lucide-react';
+import { Eye, Wrench, Code, Copy, ExternalLink, Download, Video, Gauge, Star, Activity } from 'lucide-react';
 import { useLang } from '@/lib/i18n/lang-context';
+import { useWatches } from '@/lib/hooks/useWatches';
 
 const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
     vision: { icon: <Eye className="w-3 h-3" />, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20' },
@@ -12,6 +13,14 @@ const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }
 };
 
 const ALL_CAPABILITIES = ['vision', 'tool', 'coding'];
+
+const AVAILABILITY_COLOR: Record<string, string> = {
+    healthy: 'text-green-400',
+    slow: 'text-yellow-400',
+    rate_limited: 'text-orange-400',
+    down: 'text-red-400',
+    unknown: 'text-white/30',
+};
 
 const RATE_LEVEL_COLOR: Record<string, string> = {
     high: 'text-green-400',
@@ -27,10 +36,12 @@ interface ModelTableClientProps {
 
 export function ModelTableClient({ models, initialSearch = '' }: ModelTableClientProps) {
     const { t, lang } = useLang();
+    const { watchedIds, toggleWatch } = useWatches();
     const [search, setSearch] = useState(initialSearch);
     const [selectedCaps, setSelectedCaps] = useState<string[]>([]);
     const [videoOnly, setVideoOnly] = useState(false);
-    const [sortBy, setSortBy] = useState<'context' | 'last_updated'>('last_updated');
+    const [watchedOnly, setWatchedOnly] = useState(false);
+    const [sortBy, setSortBy] = useState<'context' | 'last_updated' | 'latency'>('last_updated');
     const [sortAsc, setSortAsc] = useState(false);
     const [copied, setCopied] = useState<string | null>(null);
 
@@ -72,6 +83,25 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
         return { label, color, hint };
     }
 
+    /** 可用性探测结果（healthy/slow/rate_limited/down/unknown） */
+    function getAvailability(model: FreeModel): { label: string; color: string; hint: string; detail: string | null } {
+        const raw = model.availability_status ?? 'unknown';
+        const status = ['healthy', 'slow', 'rate_limited', 'down'].includes(raw) ? raw : 'unknown';
+        const color = AVAILABILITY_COLOR[status];
+        const label = t(`table.avail.${status}`);
+        let hint = t(`table.avail.${status}.hint`);
+        let detail: string | null = null;
+
+        if (model.latency_ms != null && status !== 'unknown') {
+            detail = t('table.latency_ms').replace('{ms}', String(Math.round(model.latency_ms)));
+        }
+        if (model.probe_success_rate != null && status !== 'unknown') {
+            const pct = Math.round(model.probe_success_rate * 100);
+            hint = `${hint} · ${t('table.success_rate').replace('{pct}', String(pct))}`;
+        }
+        return { label, color, hint, detail };
+    }
+
     const filtered = useMemo(() => {
         return models
             .filter(m => {
@@ -80,14 +110,26 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                 const matchCaps = selectedCaps.length === 0 ||
                     selectedCaps.every(c => m.capabilities?.includes(c));
                 const matchVideo = !videoOnly || m.is_video_supported;
-                return matchSearch && matchCaps && matchVideo;
+                const matchWatched = !watchedOnly || watchedIds.has(m.id);
+                return matchSearch && matchCaps && matchVideo && matchWatched;
             })
             .sort((a, b) => {
-                const aVal = sortBy === 'context' ? (a.context || 0) : new Date(a.last_updated).getTime();
-                const bVal = sortBy === 'context' ? (b.context || 0) : new Date(b.last_updated).getTime();
+                let aVal: number;
+                let bVal: number;
+                if (sortBy === 'context') {
+                    aVal = a.context || 0;
+                    bVal = b.context || 0;
+                } else if (sortBy === 'latency') {
+                    // Unknown/unprobed models sort last when descending (fastest first)
+                    aVal = a.latency_ms ?? (sortAsc ? Infinity : -1);
+                    bVal = b.latency_ms ?? (sortAsc ? Infinity : -1);
+                } else {
+                    aVal = new Date(a.last_updated).getTime();
+                    bVal = new Date(b.last_updated).getTime();
+                }
                 return sortAsc ? aVal - bVal : bVal - aVal;
             });
-    }, [models, search, selectedCaps, videoOnly, sortBy, sortAsc]);
+    }, [models, search, selectedCaps, videoOnly, watchedOnly, watchedIds, sortBy, sortAsc]);
 
     function copyId(id: string) {
         navigator.clipboard.writeText(id);
@@ -96,10 +138,11 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
     }
 
     function exportCsv() {
-        const header = 'ID,Name,Provider,Context,Capabilities,VideoSupported,RateLimit,Last Updated';
+        const header = 'ID,Name,Provider,Context,Capabilities,VideoSupported,RateLimit,Availability,LatencyMs,Last Updated';
         const rows = filtered.map(m => {
             const rl = getRateLimit(m);
-            return `"${m.id}","${m.name}","${m.provider || ''}","${m.context || ''}","${(m.capabilities || []).join('|')}","${m.is_video_supported}","${rl.label}","${m.last_updated}"`;
+            const av = getAvailability(m);
+            return `"${m.id}","${m.name}","${m.provider || ''}","${m.context || ''}","${(m.capabilities || []).join('|')}","${m.is_video_supported}","${rl.label}","${av.label}","${m.latency_ms ?? ''}","${m.last_updated}"`;
         });
         const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
@@ -151,15 +194,29 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                         <Video className="w-3 h-3" />
                         Video
                     </button>
+
+                    {/* Watched filter */}
+                    <button
+                        onClick={() => setWatchedOnly(!watchedOnly)}
+                        className={`flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-all ${watchedOnly
+                            ? 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30'
+                            : 'text-white/40 bg-white/5 border-white/10 hover:border-white/20'
+                            }`}
+                    >
+                        <Star className={`w-3 h-3 ${watchedOnly ? 'fill-yellow-400' : ''}`} />
+                        {t('filter.watched')}
+                        {watchedIds.size > 0 && <span className="opacity-60">({watchedIds.size})</span>}
+                    </button>
                 </div>
 
                 <select
                     value={sortBy}
-                    onChange={e => setSortBy(e.target.value as 'context' | 'last_updated')}
+                    onChange={e => setSortBy(e.target.value as 'context' | 'last_updated' | 'latency')}
                     className="h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/70 focus:outline-none cursor-pointer"
                 >
                     <option value="last_updated">{t('filter.sort.recent')}</option>
                     <option value="context">{t('filter.sort.ctx')}</option>
+                    <option value="latency">{t('filter.sort.latency')}</option>
                 </select>
 
                 <button
@@ -194,6 +251,13 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                                     </span>
                                 </th>
                                 <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold cursor-pointer hover:text-white/60"
+                                    onClick={() => { setSortBy('latency'); setSortAsc(!sortAsc); }}>
+                                    <span className="flex items-center gap-1">
+                                        <Activity className="w-3 h-3" />
+                                        {t('table.availability')} {sortBy === 'latency' ? (sortAsc ? '↑' : '↓') : ''}
+                                    </span>
+                                </th>
+                                <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold cursor-pointer hover:text-white/60"
                                     onClick={() => { setSortBy('last_updated'); setSortAsc(!sortAsc); }}>
                                     {t('table.updated')} {sortBy === 'last_updated' ? (sortAsc ? '↑' : '↓') : ''}
                                 </th>
@@ -203,6 +267,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                         <tbody>
                             {filtered.map((model, i) => {
                                 const rl = getRateLimit(model);
+                                const av = getAvailability(model);
                                 return (
                                     <tr
                                         key={model.id}
@@ -262,12 +327,35 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                                             </span>
                                         </td>
                                         <td className="px-4 py-3">
+                                            <div className="flex flex-col gap-0.5">
+                                                <span
+                                                    className={`text-xs font-medium cursor-help ${av.color}`}
+                                                    title={av.hint}
+                                                >
+                                                    {av.label}
+                                                </span>
+                                                {av.detail && (
+                                                    <span className="text-[10px] text-white/30 font-mono">{av.detail}</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3">
                                             <span className="text-xs text-white/30">
                                                 {new Date(model.last_updated).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US')}
                                             </span>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2 justify-end">
+                                                <button
+                                                    onClick={() => toggleWatch(model.id)}
+                                                    title={watchedIds.has(model.id) ? t('table.unwatch') : t('table.watch')}
+                                                    className={`p-1.5 rounded-md hover:bg-white/10 transition-all ${watchedIds.has(model.id)
+                                                        ? 'text-yellow-400'
+                                                        : 'text-white/30 hover:text-yellow-400'
+                                                        }`}
+                                                >
+                                                    <Star className={`w-3.5 h-3.5 ${watchedIds.has(model.id) ? 'fill-yellow-400' : ''}`} />
+                                                </button>
                                                 <button
                                                     onClick={() => copyId(model.id)}
                                                     title={t('table.copy_id')}

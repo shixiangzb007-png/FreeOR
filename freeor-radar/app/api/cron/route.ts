@@ -4,6 +4,7 @@ import { diffAndSyncModels } from '@/lib/openrouter/diff-models';
 import { notifyTelegram } from '@/lib/notifications/telegram';
 import { notifyDiscord } from '@/lib/notifications/discord';
 import { notifyX } from '@/lib/notifications/x-twitter';
+import { notifyWatchers } from '@/lib/notifications/watch-alerts';
 import { createServiceClient } from '@/lib/supabase/server';
 import { syncLog, flushLogs } from '@/lib/openrouter/sync-logger';
 import { validateCronEnv, isValidDiscordWebhook, isValidTelegramChatId } from '@/lib/env';
@@ -151,7 +152,10 @@ export async function POST(req: NextRequest): Promise<NextResponse<CronResult>> 
             // Per-user subscriptions saved from the settings page (Telegram / Discord).
             const subscriberCount = await notifySubscriptions(supabase, diff);
 
-            notified = tasks.length > 0 || subscriberCount > 0;
+            // Targeted alerts for users watching specific affected models.
+            const watcherCount = await notifyWatchers(supabase, diff);
+
+            notified = tasks.length > 0 || subscriberCount > 0 || watcherCount > 0;
         } else {
             syncLog('info', 'No changes detected — skipping notifications');
         }

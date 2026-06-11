@@ -7,6 +7,7 @@
 import { FreeModel, ModelDiff } from '@/types';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { syncLog } from './sync-logger';
+import { stripProbeFields } from './probe-models';
 
 // ─── Public API ───────────────────────────────────────────────
 
@@ -102,9 +103,11 @@ export async function diffAndSyncModels(
     // Skill: ON CONFLICT (id) DO UPDATE — upsert idempotent
     if (newModels.length > 0) {
         try {
+            // Omit probe-owned columns so hourly sync doesn't reset availability metrics.
+            const syncPayload = newModels.map(m => stripProbeFields(m as unknown as Record<string, unknown>));
             const { error } = await supabase
                 .from('free_models')
-                .upsert(newModels, { onConflict: 'id' });
+                .upsert(syncPayload, { onConflict: 'id' });
 
             if (error) throw new Error(error.message);
             syncLog('info', `Upserted ${newModels.length} models to free_models`);
