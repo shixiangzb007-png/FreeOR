@@ -157,6 +157,8 @@ export interface PromptTemplate {
   template: string;
   platform: VideoGenPlatform;
   tags: string[];
+  /** Target duration in seconds (clamped to model max at submit time) */
+  durationSeconds: number;
 }
 
 export type VideoGenPlatform = 'kling' | 'veo' | 'runway' | 'genmo' | 'pika' | 'higgsfield' | 'openart' | 'all';

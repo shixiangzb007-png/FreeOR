@@ -3,10 +3,17 @@
 import { useState, useEffect } from 'react';
 import { VIDEO_PROMPT_TEMPLATES, fillTemplate, extractVariables } from '@/lib/prompts/video-templates';
 import { VideoGenPlatform } from '@/types';
-import { Copy, RefreshCw, Sparkles, Video, Download, Trash2, RotateCcw, Play } from 'lucide-react';
+import { Copy, RefreshCw, Sparkles, Video, Download, Trash2, RotateCcw, Play, Film } from 'lucide-react';
 import { VideoCreditBanner } from '@/components/dashboard/CreditBanner';
 import { useLang } from '@/lib/i18n/lang-context';
 import { useVideoTasks } from '@/lib/hooks/useVideoTasks';
+import { OverviewPanel } from '@/components/video/OverviewPanel';
+import {
+    VIDEO_MODEL_CONFIGS,
+    clampVideoDuration,
+    durationPresetsForModel,
+    getVideoModelConfig,
+} from '@/lib/video/models';
 
 // ── Constants ─────────────────────────────────────────────────
 
@@ -23,14 +30,7 @@ const PLATFORMS: { value: VideoGenPlatform; label: string; color: string }[] = [
 
 // OpenRouter 视频生成模型（POST /api/v1/videos）。注意：视频模型均按用量计费，
 // 需使用自己有余额的 OpenRouter Key（BYOK）。ID 来自 /api/v1/videos/models。
-const VIDEO_MODELS = [
-    { id: 'bytedance/seedance-2.0-fast', name: 'Seedance 2.0 Fast', badge: 'PAID' },
-    { id: 'bytedance/seedance-2.0', name: 'Seedance 2.0', badge: 'PAID' },
-    { id: 'kwaivgi/kling-v3.0-std', name: 'Kling v3.0 Std', badge: 'PAID' },
-    { id: 'alibaba/wan-2.7', name: 'Wan 2.7', badge: 'PAID' },
-    { id: 'google/veo-3.1-fast', name: 'Google Veo 3.1 Fast', badge: 'PAID' },
-    { id: 'google/veo-3.1', name: 'Google Veo 3.1', badge: 'PAID' },
-];
+const VIDEO_MODELS = VIDEO_MODEL_CONFIGS;
 
 // ── Status Badge ──────────────────────────────────────────────
 
@@ -63,6 +63,9 @@ export default function VideoPage() {
     const [selectedPlatform, setSelectedPlatform] = useState<VideoGenPlatform>('all');
     const [selectedTemplateId, setSelectedTemplateId] = useState(VIDEO_PROMPT_TEMPLATES[0].id);
     const [selectedModel, setSelectedModel] = useState(VIDEO_MODELS[0].id);
+    const [selectedDuration, setSelectedDuration] = useState(
+        clampVideoDuration(VIDEO_PROMPT_TEMPLATES[0].durationSeconds, VIDEO_MODELS[0].id)
+    );
     const [description, setDescription] = useState('');
     const [generatedPrompt, setGeneratedPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
@@ -71,6 +74,7 @@ export default function VideoPage() {
     const [history, setHistory] = useState<string[]>([]);
     const [apiKey, setApiKey] = useState('');
     const [submitError, setSubmitError] = useState('');
+    const [videoTab, setVideoTab] = useState<'clip' | 'overview'>('clip');
 
     // Load prompt history and API key from localStorage
     useEffect(() => {
@@ -91,13 +95,27 @@ export default function VideoPage() {
         tmpl => selectedPlatform === 'all' || tmpl.platform === selectedPlatform || tmpl.platform === 'all'
     );
     const selectedTemplate = filteredTemplates.find(tmpl => tmpl.id === selectedTemplateId) || filteredTemplates[0];
+    const modelConfig = getVideoModelConfig(selectedModel);
+    const durationPresets = durationPresetsForModel(selectedModel);
+    const durationClamped = selectedTemplate
+        && selectedTemplate.durationSeconds > modelConfig.maxDuration;
+
+    // Apply template default duration when template or model changes
+    useEffect(() => {
+        const tmpl = VIDEO_PROMPT_TEMPLATES.find(t => t.id === selectedTemplateId);
+        if (!tmpl) return;
+        setSelectedDuration(clampVideoDuration(tmpl.durationSeconds, selectedModel));
+    }, [selectedTemplateId, selectedModel]);
 
     async function handleGeneratePrompt() {
         if (!description.trim() || !selectedTemplate) return;
         setIsGenerating(true);
 
-        const variables: Record<string, string> = {};
-        extractVariables(selectedTemplate.template).forEach(v => { variables[v] = description; });
+        const effectiveDuration = clampVideoDuration(selectedDuration, selectedModel);
+        const variables: Record<string, string> = { duration: String(effectiveDuration) };
+        extractVariables(selectedTemplate.template).forEach(v => {
+            if (v !== 'duration') variables[v] = description;
+        });
         variables['subject'] = description;
         variables['topic'] = description;
         variables['theme'] = description;
@@ -105,6 +123,7 @@ export default function VideoPage() {
         await new Promise(r => setTimeout(r, 800));
         const prompt = fillTemplate(selectedTemplate, variables);
         setGeneratedPrompt(prompt);
+        setSelectedDuration(effectiveDuration);
         setIsGenerating(false);
 
         setHistory(prev => {
@@ -121,7 +140,12 @@ export default function VideoPage() {
 
         setIsSubmitting(true);
         try {
-            await submitTask({ prompt: generatedPrompt, model: selectedModel, lang }, apiKey);
+            await submitTask({
+                prompt: generatedPrompt,
+                model: selectedModel,
+                lang,
+                duration: clampVideoDuration(selectedDuration, selectedModel),
+            }, apiKey);
         } finally {
             setIsSubmitting(false);
         }
@@ -141,7 +165,37 @@ export default function VideoPage() {
                 <p className="text-sm text-white/40 mt-1">{t('video.subtitle')}</p>
             </div>
 
-            {/* Credits — always visible */}
+            {/* Video Clip vs Overview tabs */}
+            <div className="flex gap-2 p-1 rounded-xl bg-white/5 border border-white/10 w-fit">
+                <button
+                    type="button"
+                    onClick={() => setVideoTab('clip')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${videoTab === 'clip'
+                        ? 'bg-green-500/15 text-green-400 border border-green-500/30'
+                        : 'text-white/40 hover:text-white/70'
+                        }`}
+                >
+                    <Video className="w-4 h-4" />
+                    {t('video.tab.clip')}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setVideoTab('overview')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${videoTab === 'overview'
+                        ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                        : 'text-white/40 hover:text-white/70'
+                        }`}
+                >
+                    <Film className="w-4 h-4" />
+                    {t('video.tab.overview')}
+                </button>
+            </div>
+
+            {videoTab === 'overview' ? (
+                <OverviewPanel />
+            ) : (
+                <>
+            {/* Credits — Clip tab */}
             <div className="p-4 rounded-2xl bg-white/3 border border-white/8">
                 <div className="flex items-center gap-2 mb-3">
                     <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -238,6 +292,38 @@ export default function VideoPage() {
                         )}
                     </button>
 
+                    {/* ── Video duration ── */}
+                    <div>
+                        <label className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-2 block">
+                            {t('video.duration.label')}
+                            <span className="ml-2 text-white/30 normal-case font-normal">
+                                {t('video.duration.max').replace('{max}', String(modelConfig.maxDuration))}
+                            </span>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                            {durationPresets.map(sec => (
+                                <button
+                                    key={sec}
+                                    type="button"
+                                    onClick={() => setSelectedDuration(sec)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${selectedDuration === sec
+                                        ? 'border-green-500/40 bg-green-500/10 text-green-400'
+                                        : 'border-white/10 bg-white/5 text-white/40 hover:border-white/20'
+                                        }`}
+                                >
+                                    {sec}s
+                                </button>
+                            ))}
+                        </div>
+                        {durationClamped && (
+                            <p className="text-[11px] text-yellow-400/80 mt-2">
+                                {t('video.duration.clamped')
+                                    .replace('{requested}', String(selectedTemplate.durationSeconds))
+                                    .replace('{max}', String(modelConfig.maxDuration))}
+                            </p>
+                        )}
+                    </div>
+
                     {/* ── Video Model Selector ── */}
                     <div>
                         <label className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-2 block">
@@ -247,7 +333,10 @@ export default function VideoPage() {
                             {VIDEO_MODELS.map(m => (
                                 <button
                                     key={m.id}
-                                    onClick={() => setSelectedModel(m.id)}
+                                    onClick={() => {
+                                        setSelectedModel(m.id);
+                                        setSelectedDuration(prev => clampVideoDuration(prev, m.id));
+                                    }}
                                     className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-sm transition-all ${selectedModel === m.id
                                             ? 'border-blue-500/40 bg-blue-500/10 text-blue-300'
                                             : 'border-white/8 bg-white/3 text-white/50 hover:border-white/15'
@@ -433,6 +522,8 @@ export default function VideoPage() {
                     </div>
                 </div>
             </div>
+                </>
+            )}
         </div>
     );
 }

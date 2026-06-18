@@ -29,6 +29,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             .eq('client_id', clientId);
 
         if (error) {
+            // Migration 006 not applied yet — degrade gracefully for local dev.
+            if (error.code === '42P01' || error.message.includes('model_watches')) {
+                return NextResponse.json({ model_ids: [] });
+            }
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
         return NextResponse.json({ model_ids: (data || []).map(r => r.model_id) });
@@ -73,6 +77,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 .eq('client_id', clientId)
                 .eq('model_id', modelId);
             if (error) {
+                if (error.code === '42P01' || error.message.includes('model_watches')) {
+                    return NextResponse.json({ error: 'model_watches table not found — run migration 006' }, { status: 503 });
+                }
                 return NextResponse.json({ error: error.message }, { status: 500 });
             }
             return NextResponse.json({ ok: true });
@@ -84,6 +91,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             .select('*', { count: 'exact', head: true })
             .eq('client_id', clientId);
         if (countError) {
+            if (countError.code === '42P01' || countError.message.includes('model_watches')) {
+                return NextResponse.json({ error: 'model_watches table not found — run migration 006' }, { status: 503 });
+            }
             return NextResponse.json({ error: countError.message }, { status: 500 });
         }
         if ((count ?? 0) >= MAX_WATCHES_PER_CLIENT) {
@@ -100,7 +110,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 { onConflict: 'client_id,model_id', ignoreDuplicates: true }
             );
         if (error) {
-            // FK violation = unknown model id
+            if (error.code === '42P01' || error.message.includes('model_watches')) {
+                return NextResponse.json({ error: 'model_watches table not found — run migration 006' }, { status: 503 });
+            }
             const status = error.code === '23503' ? 404 : 500;
             return NextResponse.json({ error: error.message }, { status });
         }
