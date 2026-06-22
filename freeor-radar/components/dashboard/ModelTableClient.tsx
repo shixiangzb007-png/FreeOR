@@ -5,6 +5,7 @@ import { FreeModel } from '@/types';
 import { Eye, Wrench, Code, Copy, ExternalLink, Download, Video, Gauge, Star, Activity } from 'lucide-react';
 import { useLang } from '@/lib/i18n/lang-context';
 import { useWatches } from '@/lib/hooks/useWatches';
+import { ModelDescriptionCell } from '@/components/dashboard/ModelDescriptionCell';
 
 const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
     vision: { icon: <Eye className="w-3 h-3" />, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20' },
@@ -106,7 +107,8 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
         return models
             .filter(m => {
                 const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase()) ||
-                    (m.provider || '').toLowerCase().includes(search.toLowerCase());
+                    (m.provider || '').toLowerCase().includes(search.toLowerCase()) ||
+                    (m.description || '').toLowerCase().includes(search.toLowerCase());
                 const matchCaps = selectedCaps.length === 0 ||
                     selectedCaps.every(c => m.capabilities?.includes(c));
                 const matchVideo = !videoOnly || m.is_video_supported;
@@ -138,11 +140,12 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
     }
 
     function exportCsv() {
-        const header = 'ID,Name,Provider,Context,Capabilities,VideoSupported,RateLimit,Availability,LatencyMs,Last Updated';
+        const header = 'ID,Name,Provider,Description,Context,Capabilities,VideoSupported,RateLimit,Availability,LatencyMs,Last Updated';
         const rows = filtered.map(m => {
             const rl = getRateLimit(m);
             const av = getAvailability(m);
-            return `"${m.id}","${m.name}","${m.provider || ''}","${m.context || ''}","${(m.capabilities || []).join('|')}","${m.is_video_supported}","${rl.label}","${av.label}","${m.latency_ms ?? ''}","${m.last_updated}"`;
+            const desc = (m.description || '').replace(/"/g, '""');
+            return `"${m.id}","${m.name}","${m.provider || ''}","${desc}","${m.context || ''}","${(m.capabilities || []).join('|')}","${m.is_video_supported}","${rl.label}","${av.label}","${m.latency_ms ?? ''}","${m.last_updated}"`;
         });
         const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
@@ -238,6 +241,9 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                             <tr className="border-b border-white/5 bg-white/3">
                                 <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">{t('table.name')}</th>
                                 <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold">{t('table.provider')}</th>
+                                <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold min-w-[200px] max-w-[280px]">
+                                    {t('table.description')}
+                                </th>
                                 <th className="text-left px-4 py-3 text-xs text-white/40 font-semibold cursor-pointer hover:text-white/60"
                                     onClick={() => { setSortBy('context'); setSortAsc(!sortAsc); }}>
                                     {t('table.context')} {sortBy === 'context' ? (sortAsc ? '↑' : '↓') : ''}
@@ -293,6 +299,12 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                                         </td>
                                         <td className="px-4 py-3">
                                             <span className="text-sm text-white/60">{model.provider || '—'}</span>
+                                        </td>
+                                        <td className="px-4 py-3 min-w-[200px] max-w-[280px]">
+                                            <ModelDescriptionCell
+                                                text={model.description}
+                                                emptyLabel={t('table.description.empty')}
+                                            />
                                         </td>
                                         <td className="px-4 py-3">
                                             <span className="text-sm text-white/70 font-mono">
@@ -382,7 +394,7 @@ export function ModelTableClient({ models, initialSearch = '' }: ModelTableClien
                             })}
                             {filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="px-4 py-12 text-center text-white/30 text-sm">
+                                    <td colSpan={9} className="px-4 py-12 text-center text-white/30 text-sm">
                                         {t('table.no_result')}
                                     </td>
                                 </tr>

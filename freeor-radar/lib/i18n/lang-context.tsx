@@ -69,6 +69,8 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
         // ── 模型表格 ──
         'table.name': '模型名称',
         'table.provider': '提供商',
+        'table.description': '功能简介',
+        'table.description.empty': '暂无简介',
         'table.context': '上下文',
         'table.caps': '能力',
         'table.ratelimit': '限流',
@@ -378,6 +380,8 @@ const TRANSLATIONS: Record<Lang, Record<string, string>> = {
         // ── Table ──
         'table.name': 'Model Name',
         'table.provider': 'Provider',
+        'table.description': 'Description',
+        'table.description.empty': 'No description',
         'table.context': 'Context',
         'table.caps': 'Capabilities',
         'table.ratelimit': 'Rate',
