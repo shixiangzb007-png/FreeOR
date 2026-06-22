@@ -15,6 +15,10 @@ export interface VideoTask {
     polling_url?: string;
     lang?: string;
     duration?: number;
+    input_references?: Array<{ type: 'image_url'; image_url: { url: string } }>;
+    character_id?: string;
+    character_name?: string;
+    mode?: 'clip' | 'character';
     created_at: string;
     error?: string;
 }
@@ -25,6 +29,12 @@ export interface VideoGenerateRequest {
     lang?: string;
     /** Video length in seconds — passed to OpenRouter `duration` field */
     duration?: number;
+    /** Character Clip reference images */
+    input_references?: Array<{ type: 'image_url'; image_url: { url: string } }>;
+    /** Metadata for UI */
+    character_id?: string;
+    character_name?: string;
+    mode?: 'clip' | 'character';
 }
 
 // ── Constants ─────────────────────────────────────────────────
@@ -182,6 +192,11 @@ export function useVideoTasks() {
             prompt: req.prompt,
             status: 'pending',
             lang,
+            duration: req.duration,
+            input_references: req.input_references,
+            character_id: req.character_id,
+            character_name: req.character_name,
+            mode: req.mode,
             created_at: new Date().toISOString(),
         };
 
@@ -199,6 +214,7 @@ export function useVideoTasks() {
                     model: req.model,
                     lang,
                     duration: req.duration,
+                    input_references: req.input_references,
                 }),
             });
 
@@ -228,6 +244,9 @@ export function useVideoTasks() {
                 job_id: data.job_id,
                 lang,
                 duration: req.duration,
+                character_id: req.character_id,
+                character_name: req.character_name,
+                mode: req.mode,
             });
 
             void pollUntilDone(local_id, data.polling_url, apiKey, lang);
@@ -248,7 +267,16 @@ export function useVideoTasks() {
         const task = tasks.find(t => t.local_id === local_id);
         if (!task) return;
         setTasks(prev => prev.filter(t => t.local_id !== local_id));
-        submitTask({ prompt: task.prompt, model: task.model, lang: task.lang, duration: task.duration }, apiKey);
+        submitTask({
+            prompt: task.prompt,
+            model: task.model,
+            lang: task.lang,
+            duration: task.duration,
+            input_references: task.input_references,
+            character_id: task.character_id,
+            character_name: task.character_name,
+            mode: task.mode,
+        }, apiKey);
     }, [tasks, submitTask]);
 
     return {

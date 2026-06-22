@@ -9,6 +9,8 @@ import {
 } from '@/types/overview';
 import { composeOverviewVideo, downloadBlob, exportPlanJson } from '@/lib/video/overview/compose-video';
 import { DEFAULT_IMAGE_MODEL } from '@/lib/video/overview/config';
+import { VideoCharacter } from '@/types/character';
+import { imageRefUrl } from '@/lib/video/characters-cloud';
 
 function readApiKey(): string {
     try {
@@ -33,6 +35,7 @@ export function useOverviewJob() {
         visualStyle: OverviewVisualStyle;
         lang: string;
         imageModel?: string;
+        hostCharacter?: VideoCharacter | null;
     }) => {
         const apiKey = readApiKey();
         if (!apiKey) throw new Error('NO_API_KEY');
@@ -74,6 +77,10 @@ export function useOverviewJob() {
 
             const imageModel = opts.imageModel || DEFAULT_IMAGE_MODEL;
             const scenes = [...plan.scenes];
+            const referenceUrls = opts.hostCharacter?.images
+                ?.map(imageRefUrl)
+                .filter(Boolean)
+                .slice(0, 3) ?? [];
 
             for (let i = 0; i < scenes.length; i++) {
                 const scene = scenes[i];
@@ -89,6 +96,9 @@ export function useOverviewJob() {
                         visual_style: opts.visualStyle,
                         model: imageModel,
                         lang: opts.lang,
+                        reference_urls: referenceUrls.length > 0 ? referenceUrls : undefined,
+                        host_name: opts.hostCharacter?.name,
+                        host_description: opts.hostCharacter?.description,
                     }),
                 });
                 const imgData = await imgRes.json();
@@ -112,12 +122,12 @@ export function useOverviewJob() {
                 plan: finalPlan,
             } : null);
 
-        const blob = await composeOverviewVideo(
-            finalPlan.scenes,
-            finalPlan.title,
-            opts.lang,
-            pct => setJob(prev => prev ? { ...prev, progress: 75 + Math.round(pct * 0.24) } : null)
-        );
+            const blob = await composeOverviewVideo(
+                finalPlan.scenes,
+                finalPlan.title,
+                opts.lang,
+                pct => setJob(prev => prev ? { ...prev, progress: 75 + Math.round(pct * 0.24) } : null)
+            );
 
             const video_blob_url = URL.createObjectURL(blob);
             setJob(prev => prev ? {

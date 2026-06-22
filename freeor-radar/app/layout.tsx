@@ -3,7 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
-import { MobileNav } from '@/components/layout/MobileNav';
+import { MobileFooter } from '@/components/layout/MobileFooter';
 import { LangProvider } from '@/lib/i18n/lang-context';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -62,14 +62,14 @@ export default function RootLayout({
               </header>
 
               {/* Page content */}
-              <main className="flex-1 overflow-y-auto px-4 pt-6 pb-24 lg:px-8 lg:pb-16">
+              <main className="flex-1 overflow-y-auto px-4 pt-6 pb-12 lg:px-8 lg:pb-16">
                 {children}
               </main>
             </div>
           </div>
 
           {/* Mobile Bottom Nav */}
-          <MobileNav />
+          <MobileFooter />
         </LangProvider>
       </body>
     </html>

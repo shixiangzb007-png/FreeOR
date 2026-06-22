@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DEFAULT_IMAGE_MODEL } from '@/lib/video/overview/config';
 import { applyVisualStyle } from '@/lib/video/overview/style-prompts';
+import { OverviewVisualStyle } from '@/types/overview';
 import {
     imageModalitiesForModel,
     imageModelFallbackChain,
 } from '@/lib/video/overview/image-models';
-import { OverviewVisualStyle } from '@/types/overview';
+import { buildHostVisualPrompt } from '@/lib/video/character-prompt';
 
 /**
  * POST /api/video/overview/image
- * Body: { prompt, narration?, visual_style?, model?, lang? }
+ * Body: { prompt, narration?, visual_style?, model?, lang?, reference_urls?, host_name?, host_description? }
  * Header: Authorization: Bearer <openrouter_key> (required)
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let visualStyle: OverviewVisualStyle = 'auto';
     let model = DEFAULT_IMAGE_MODEL;
     let lang = 'zh';
+    let referenceUrls: string[] = [];
+    let hostName = '';
+    let hostDescription = '';
 
     try {
         const body = await req.json();
@@ -26,6 +30,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         if (body.visual_style) visualStyle = body.visual_style;
         if (body.model) model = body.model;
         if (body.lang) lang = body.lang;
+        if (Array.isArray(body.reference_urls)) {
+            referenceUrls = body.reference_urls
+                .filter((u: unknown) => typeof u === 'string' && (u.startsWith('https://') || u.startsWith('data:image')))
+                .slice(0, 3);
+        }
+        if (body.host_name) hostName = String(body.host_name).slice(0, 64);
+        if (body.host_description) hostDescription = String(body.host_description).slice(0, 300);
     } catch {
         return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
@@ -44,6 +55,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     let fullPrompt = applyVisualStyle(visualStyle, prompt);
+    if (referenceUrls.length > 0) {
+        fullPrompt = buildHostVisualPrompt(fullPrompt, {
+            name: hostName || 'Host',
+            description: hostDescription,
+        });
+    }
     if (narration && !prompt.includes(narration.slice(0, 40))) {
         const anchor = narration.slice(0, 220);
         fullPrompt = `${fullPrompt} Scene must illustrate this narration: 「${anchor}」`;
@@ -53,7 +70,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let lastError = '';
 
     for (const candidate of candidates) {
-        const result = await requestImage(apiKey, candidate, fullPrompt);
+        const result = await requestImage(apiKey, candidate, fullPrompt, referenceUrls);
         if (result.ok) {
             const image_url = await normalizeImageUrl(result.url, apiKey);
             return NextResponse.json({ image_url, model: candidate });
@@ -74,9 +91,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 async function requestImage(
     apiKey: string,
     model: string,
-    prompt: string
+    prompt: string,
+    referenceUrls: string[] = []
 ): Promise<{ ok: true; url: string } | { ok: false; error: string; status: number; stop?: boolean }> {
     try {
+        const userContent = referenceUrls.length > 0
+            ? [
+                { type: 'text', text: prompt },
+                ...referenceUrls.map(url => ({
+                    type: 'image_url',
+                    image_url: { url },
+                })),
+            ]
+            : prompt;
+
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -87,7 +115,7 @@ async function requestImage(
             },
             body: JSON.stringify({
                 model,
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: 'user', content: userContent }],
                 modalities: imageModalitiesForModel(model),
             }),
             signal: AbortSignal.timeout(120_000),

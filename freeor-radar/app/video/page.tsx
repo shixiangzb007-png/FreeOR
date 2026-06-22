@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import { VIDEO_PROMPT_TEMPLATES, fillTemplate, extractVariables } from '@/lib/prompts/video-templates';
 import { VideoGenPlatform } from '@/types';
-import { Copy, RefreshCw, Sparkles, Video, Download, Trash2, RotateCcw, Play, Film } from 'lucide-react';
+import { Copy, RefreshCw, Sparkles, Video, Download, Trash2, RotateCcw, Play, Film, User } from 'lucide-react';
 import { VideoCreditBanner } from '@/components/dashboard/CreditBanner';
 import { useLang } from '@/lib/i18n/lang-context';
 import { useVideoTasks } from '@/lib/hooks/useVideoTasks';
 import { OverviewPanel } from '@/components/video/OverviewPanel';
+import { CharacterPanel } from '@/components/video/CharacterPanel';
 import {
     VIDEO_MODEL_CONFIGS,
     clampVideoDuration,
@@ -74,7 +75,7 @@ export default function VideoPage() {
     const [history, setHistory] = useState<string[]>([]);
     const [apiKey, setApiKey] = useState('');
     const [submitError, setSubmitError] = useState('');
-    const [videoTab, setVideoTab] = useState<'clip' | 'overview'>('clip');
+    const [videoTab, setVideoTab] = useState<'clip' | 'character' | 'overview'>('clip');
 
     // Load prompt history and API key from localStorage
     useEffect(() => {
@@ -180,6 +181,17 @@ export default function VideoPage() {
                 </button>
                 <button
                     type="button"
+                    onClick={() => setVideoTab('character')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${videoTab === 'character'
+                        ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                        : 'text-white/40 hover:text-white/70'
+                        }`}
+                >
+                    <User className="w-4 h-4" />
+                    {t('video.tab.character')}
+                </button>
+                <button
+                    type="button"
                     onClick={() => setVideoTab('overview')}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${videoTab === 'overview'
                         ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
@@ -193,6 +205,8 @@ export default function VideoPage() {
 
             {videoTab === 'overview' ? (
                 <OverviewPanel />
+            ) : videoTab === 'character' ? (
+                <CharacterPanel />
             ) : (
                 <>
             {/* Credits — Clip tab */}

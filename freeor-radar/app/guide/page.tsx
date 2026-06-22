@@ -4,11 +4,11 @@ import { useState } from 'react';
 import {
     BookOpen, ChevronDown, ChevronRight,
     LayoutDashboard, Video, Sparkles, GitFork, Code2, Settings,
-    Zap, Bell, RefreshCw, Search, Download,
+    Zap, Bell, RefreshCw, Search, Download, User, Film,
 } from 'lucide-react';
 import { useLang } from '@/lib/i18n/lang-context';
 
-type SectionId = 's1' | 's2' | 's3' | 's4' | 's5' | 's6';
+type SectionId = 's1' | 's2' | 's7' | 's8' | 's3' | 's4' | 's5' | 's6';
 
 interface SectionMeta {
     id: SectionId;
@@ -19,12 +19,14 @@ interface SectionMeta {
 }
 
 const SECTION_META: SectionMeta[] = [
-    { id: 's1', icon: LayoutDashboard, color: 'text-green-400',  steps: 4 },
-    { id: 's2', icon: Video,           color: 'text-purple-400', steps: 4 },
+    { id: 's1', icon: LayoutDashboard, color: 'text-green-400',  steps: 5 },
+    { id: 's2', icon: Video,           color: 'text-emerald-400', steps: 4 },
+    { id: 's7', icon: User,            color: 'text-purple-400', steps: 5 },
+    { id: 's8', icon: Film,            color: 'text-blue-400',   steps: 4 },
     { id: 's3', icon: Sparkles,        color: 'text-yellow-400', steps: 4 },
-    { id: 's4', icon: GitFork,         color: 'text-blue-400',   steps: 3 },
-    { id: 's5', icon: Code2,           color: 'text-cyan-400',   steps: 4 },
-    { id: 's6', icon: Settings,        color: 'text-orange-400', steps: 4 },
+    { id: 's4', icon: GitFork,         color: 'text-cyan-400',   steps: 3 },
+    { id: 's5', icon: Code2,           color: 'text-teal-400',   steps: 4 },
+    { id: 's6', icon: Settings,        color: 'text-orange-400', steps: 5 },
 ];
 
 export default function GuidePage() {
@@ -45,12 +47,14 @@ export default function GuidePage() {
             </div>
 
             {/* Quick tips */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-2">
                 {([
                     { icon: RefreshCw, key: 'guide.tips.sync' },
                     { icon: Bell,      key: 'guide.tips.notify' },
                     { icon: Search,    key: 'guide.tips.search' },
                     { icon: Download,  key: 'guide.tips.csv' },
+                    { icon: Video,     key: 'guide.tips.video' },
+                    { icon: User,      key: 'guide.tips.character' },
                 ] as { icon: React.ElementType; key: string }[]).map(({ icon: Icon, key }) => (
                     <div key={key} className="flex items-center gap-2 p-3 rounded-xl bg-white/3 border border-white/6">
                         <Icon className="w-4 h-4 text-green-400 flex-shrink-0" />

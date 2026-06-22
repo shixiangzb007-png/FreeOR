@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { Film, Loader2, Download, FileJson, Sparkles, AlertCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Film, Loader2, Download, FileJson, Sparkles, AlertCircle, User } from 'lucide-react';
 import { useLang } from '@/lib/i18n/lang-context';
 import { useOverviewJob } from '@/lib/hooks/useOverviewJob';
+import { useCharacters } from '@/lib/hooks/useCharacters';
 import { OverviewFormat, OverviewVisualStyle } from '@/types/overview';
 import { DEFAULT_IMAGE_MODEL, FORMAT_TARGETS, OVERVIEW_IMAGE_MODELS } from '@/lib/video/overview/config';
 
@@ -17,13 +18,19 @@ const STYLES: { value: OverviewVisualStyle; labelKey: string }[] = [
 export function OverviewPanel() {
     const { t, lang } = useLang();
     const { job, runOverview, reset, downloadVideo, downloadStoryboard } = useOverviewJob();
+    const { characters, overviewHost } = useCharacters();
 
     const [sourceText, setSourceText] = useState('');
     const [format, setFormat] = useState<OverviewFormat>('brief');
     const [visualStyle, setVisualStyle] = useState<OverviewVisualStyle>('whiteboard');
     const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
+    const [hostCharacterId, setHostCharacterId] = useState<string>('');
     const [error, setError] = useState('');
     const [isRunning, setIsRunning] = useState(false);
+
+    useEffect(() => {
+        if (overviewHost && !hostCharacterId) setHostCharacterId(overviewHost.id);
+    }, [overviewHost, hostCharacterId]);
 
     const target = FORMAT_TARGETS[format];
     const isBusy = isRunning || (job != null && !['done', 'failed'].includes(job.status));
@@ -37,7 +44,10 @@ export function OverviewPanel() {
         setIsRunning(true);
         reset();
         try {
-            await runOverview({ sourceText, format, visualStyle, lang, imageModel });
+            const hostCharacter = hostCharacterId
+                ? characters.find(c => c.id === hostCharacterId) || null
+                : null;
+            await runOverview({ sourceText, format, visualStyle, lang, imageModel, hostCharacter });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             if (msg === 'NO_API_KEY') {
@@ -118,6 +128,31 @@ export function OverviewPanel() {
                                 </button>
                             ))}
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-2 block">
+                            {t('overview.host_character')}
+                        </label>
+                        <select
+                            value={hostCharacterId}
+                            onChange={e => setHostCharacterId(e.target.value)}
+                            disabled={isBusy}
+                            className="w-full h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/70 focus:outline-none"
+                        >
+                            <option value="" className="bg-neutral-900">{t('overview.host_none')}</option>
+                            {characters.map(c => (
+                                <option key={c.id} value={c.id} className="bg-neutral-900">
+                                    {c.name}{c.is_overview_host ? ` (${t('character.overview_host')})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                        {hostCharacterId && (
+                            <p className="text-[10px] text-white/30 mt-1 flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {t('overview.host_hint')}
+                            </p>
+                        )}
                     </div>
 
                     <div>

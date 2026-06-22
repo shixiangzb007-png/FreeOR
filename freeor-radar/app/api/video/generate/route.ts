@@ -57,11 +57,30 @@ function openRouterHeaders(apiKey: string): Record<string, string> {
     };
 }
 
+interface InputReferenceBody {
+    type?: string;
+    image_url?: { url?: string };
+}
+
+function parseInputReferences(raw: unknown): Array<{ type: 'image_url'; image_url: { url: string } }> | null {
+    if (!Array.isArray(raw) || raw.length === 0) return null;
+    const refs: Array<{ type: 'image_url'; image_url: { url: string } }> = [];
+    for (const item of raw.slice(0, 3)) {
+        const r = item as InputReferenceBody;
+        const url = r?.image_url?.url?.trim();
+        if (!url) continue;
+        if (!url.startsWith('https://') && !url.startsWith('data:image/')) continue;
+        refs.push({ type: 'image_url', image_url: { url } });
+    }
+    return refs.length > 0 ? refs : null;
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
     let prompt = '';
     let model = 'google/veo-3.1';
     let lang = 'zh';
     let duration: number | undefined;
+    let inputReferences: Array<{ type: 'image_url'; image_url: { url: string } }> | null = null;
 
     try {
         const body = await req.json();
@@ -72,6 +91,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             const parsed = Number(body.duration);
             if (Number.isFinite(parsed)) duration = clampVideoDuration(parsed, model);
         }
+        inputReferences = parseInputReferences(body.input_references);
     } catch {
         return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
@@ -104,6 +124,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             payload.duration = duration;
         } else {
             payload.duration = getVideoModelConfig(model).defaultDuration;
+        }
+        if (inputReferences?.length) {
+            payload.input_references = inputReferences;
         }
 
         const res = await fetch(OPENROUTER_VIDEO_ENDPOINT, {
@@ -193,6 +216,8 @@ export async function GET(): Promise<NextResponse> {
             prompt: 'string (required)',
             model: 'string (optional, default: google/veo-3.1)',
             lang: 'string (optional, "zh" | "en")',
+            duration: 'number (optional, seconds)',
+            input_references: 'array (optional, Character Clip reference images)',
         },
         headers: { Authorization: 'Bearer <openrouter_key>' },
     });
